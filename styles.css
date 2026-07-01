@@ -2050,3 +2050,20 @@ input:checked + .express-badge {
     margin-top: 40px;
   }
 }
+
+@keyframes gradientShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@media (max-width: 768px) {
+  .colorful-modal {
+    flex-direction: column !important;
+  }
+  .colorful-modal-left {
+    padding: 30px 20px !important;
+  }
+  .colorful-modal-right {
+    padding: 30px 20px !important;
+  }
+}
