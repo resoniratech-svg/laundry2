@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useDatabase, type Order, type Service, type Customer, type User, type Expense } from './DatabaseContext';
 import { PortalLayout } from './components/PortalLayout';
-import { Line, Doughnut } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -98,42 +97,8 @@ export const AdminPortal: React.FC = () => {
   const [walletAmt, setWalletAmt] = useState('');
   const [walletDir, setWalletDir] = useState<'in' | 'out'>('in');
 
-  // Daily Orders search & filter state
   const [ordersSearch, setOrdersSearch] = useState('');
-  const [ordersBranchFilter, setOrdersBranchFilter] = useState('All');
-
-  // Dynamic Chart Configurations
-  const salesChartData = {
-    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-    datasets: [{
-      label: 'Gross Sales (QR)',
-      data: [420.50, 680.00, 550.00, 910.00, 840.00, 1100.20, 1280.50],
-      borderColor: '#3b82f6',
-      backgroundColor: 'rgba(59, 130, 246, 0.05)',
-      borderWidth: 3,
-      pointBackgroundColor: '#ec4899',
-      pointBorderColor: '#fff',
-      pointBorderWidth: 2,
-      pointRadius: 5,
-      fill: true,
-      tension: 0.4
-    }]
-  };
-
-  const doughnutChartData = {
-    labels: ['Wash & Fold', 'Dry Cleaning', 'Steam Press', 'Premium Services'],
-    datasets: [{
-      data: [45, 25, 20, 10],
-      backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6'],
-      borderWidth: 0
-    }]
-  };
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } }
-  };
+  const ordersBranchFilter = 'All';
 
   // KPI calculations
   const dailyOrders = db.orders.filter(o => o.frequency !== 'Monthly');
