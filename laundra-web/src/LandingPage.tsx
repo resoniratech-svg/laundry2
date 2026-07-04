@@ -753,7 +753,7 @@ export const LandingPage: React.FC = () => {
               <button onClick={() => setShowLogIn(false)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
             <form onSubmit={handleLogInSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {loginEmail.trim().toLowerCase() !== 'superadmin@laundra.com' && (
+              {loginRole !== 'superadmin' && loginEmail.trim().toLowerCase() !== 'superadmin@laundra.com' && (
                 <div className="form-group">
                   <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Select Laundry Company</label>
                   <select 
@@ -771,10 +771,25 @@ export const LandingPage: React.FC = () => {
               )}
               <div className="form-group">
                 <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Select Portal</label>
-                <select value={loginRole} onChange={(e) => setLoginRole(e.target.value)} className="form-input" required style={{ height: '48px', fontWeight: '600' }}>
+                <select 
+                  value={loginRole} 
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setLoginRole(val);
+                    if (val === 'superadmin') {
+                      setLoginEmail('superadmin@laundra.com');
+                    } else if (loginEmail === 'superadmin@laundra.com') {
+                      setLoginEmail('');
+                    }
+                  }} 
+                  className="form-input" 
+                  required 
+                  style={{ height: '48px', fontWeight: '600' }}
+                >
                   <option value="admin">Admin Portal</option>
                   <option value="delivery">Delivery Portal</option>
                   <option value="customer">Customer Portal</option>
+                  <option value="superadmin">Super Admin Portal</option>
                 </select>
               </div>
               <div className="form-group">
