@@ -110,6 +110,13 @@ export const LandingPage: React.FC = () => {
       return;
     }
 
+    // Tenant suspension check
+    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
+    if (activeCompany && activeCompany.status === 'Suspended') {
+      alert('This company portal has been suspended. Please contact platform support.');
+      return;
+    }
+
     // Admin credentials bypass / strict check (ONLY for default company Laundra HQ)
     if (db.activeCompanyId === 'comp-default' && email === 'admin@laundra.com' && pass === 'admin' && role === 'admin') {
       saveDB({ activeRole: 'Admin', currentDeliveryBoy: null });
@@ -160,6 +167,12 @@ export const LandingPage: React.FC = () => {
 
   const handleStaffSignInSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    // Tenant suspension check
+    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
+    if (activeCompany && activeCompany.status === 'Suspended') {
+      alert('This company portal has been suspended. Please contact platform support.');
+      return;
+    }
     if (signInRole === 'Customer') {
       const email = signInEmail.trim().toLowerCase();
       const pass = signInPass;

@@ -92,6 +92,18 @@ export interface Company {
   slug: string;
   createdAt: string;
   adminEmail: string;
+  status: 'Active' | 'Suspended';
+  subscription: {
+    tier: 'Free Trial' | 'Premium' | 'Enterprise';
+    status: 'Active' | 'Expired';
+    expiresAt: string;
+  };
+  features: {
+    expressWash: boolean;
+    expenses: boolean;
+    promos: boolean;
+    deliveryOperations: boolean;
+  };
 }
 
 export interface Database {
@@ -126,6 +138,7 @@ interface DatabaseContextType {
   saveDB: (updatedFields: Partial<Database>) => void;
   createCompany: (name: string, slug: string, adminEmail: string, adminPass: string) => void;
   deleteCompany: (companyId: string) => void;
+  updateCompany: (companyId: string, updates: Partial<Company>) => void;
   changeActiveCompany: (companyId: string) => void;
 }
 
@@ -188,14 +201,47 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Global states for multi-tenancy
   const [companies, setCompanies] = useState<Company[]>(() => {
     const saved = localStorage.getItem('ll_companies');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((c: any) => ({
+          ...c,
+          status: c.status || 'Active',
+          subscription: c.subscription || {
+            tier: 'Premium',
+            status: 'Active',
+            expiresAt: '2027-12-31'
+          },
+          features: c.features || {
+            expressWash: true,
+            expenses: true,
+            promos: true,
+            deliveryOperations: true
+          }
+        }));
+      } catch (e) {
+        console.error('Error parsing companies', e);
+      }
+    }
 
     const defaultComp: Company = {
       id: 'comp-default',
       name: 'Laundra HQ',
       slug: 'laundra',
       createdAt: new Date().toISOString().split('T')[0],
-      adminEmail: 'admin@laundra.com'
+      adminEmail: 'admin@laundra.com',
+      status: 'Active',
+      subscription: {
+        tier: 'Premium',
+        status: 'Active',
+        expiresAt: '2027-12-31'
+      },
+      features: {
+        expressWash: true,
+        expenses: true,
+        promos: true,
+        deliveryOperations: true
+      }
     };
     return [defaultComp];
   });
@@ -468,7 +514,19 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       name,
       slug: slug.toLowerCase().trim(),
       createdAt: new Date().toISOString().split('T')[0],
-      adminEmail: adminEmail.trim().toLowerCase()
+      adminEmail: adminEmail.trim().toLowerCase(),
+      status: 'Active',
+      subscription: {
+        tier: 'Free Trial',
+        status: 'Active',
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      features: {
+        expressWash: true,
+        expenses: true,
+        promos: true,
+        deliveryOperations: true
+      }
     };
 
     const seededAdmin: User = {
@@ -519,6 +577,20 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const updateCompany = (companyId: string, updates: Partial<Company>) => {
+    setCompanies(prev => prev.map(c => {
+      if (c.id === companyId) {
+        return {
+          ...c,
+          ...updates,
+          subscription: updates.subscription ? { ...c.subscription, ...updates.subscription } : c.subscription,
+          features: updates.features ? { ...c.features, ...updates.features } : c.features
+        };
+      }
+      return c;
+    }));
+  };
+
   const saveDB = (fields: Partial<Database>) => {
     if (fields.services !== undefined) setServices(fields.services);
     if (fields.customers !== undefined) setCustomers(fields.customers);
@@ -566,6 +638,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       saveDB,
       createCompany,
       deleteCompany,
+      updateCompany,
       changeActiveCompany
     }}>
       {children}

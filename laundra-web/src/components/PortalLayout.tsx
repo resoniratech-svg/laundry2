@@ -49,7 +49,20 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
 
   // Filter allowed modules
   const isAllowed = (moduleId: string) => {
+    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
+    if (activeCompany && activeCompany.features) {
+      if (moduleId === 'express-wash' && !activeCompany.features.expressWash) {
+        return false;
+      }
+      if (moduleId === 'delivery-status' && !activeCompany.features.deliveryOperations) {
+        return false;
+      }
+    }
+
     if (role === 'Delivery Boy') {
+      if (activeCompany && activeCompany.features && !activeCompany.features.deliveryOperations) {
+        return false;
+      }
       return ['pending-orders', 'your-orders'].includes(moduleId);
     }
     if (['pending-orders', 'your-orders'].includes(moduleId)) {
@@ -167,7 +180,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
 
         <div className="cta-row" style={{ margin: 0 }}>
           {isTabAllowed('customer') && <button onClick={() => navigate('/customer')} className="secondary-btn sub-tab-nav">Customer Hub</button>}
-          {isTabAllowed('delivery') && <button onClick={() => onModuleChange('pending-orders')} className="secondary-btn sub-tab-nav">Delivery Hub</button>}
+          {isTabAllowed('delivery') && (db.companies.find(c => c.id === db.activeCompanyId)?.features?.deliveryOperations !== false) && <button onClick={() => onModuleChange('pending-orders')} className="secondary-btn sub-tab-nav">Delivery Hub</button>}
           <button onClick={() => navigate('/')} className="primary-btn">Home</button>
         </div>
       </div>
