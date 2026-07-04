@@ -418,7 +418,8 @@ export const AdminPortal: React.FC = () => {
       total: total,
       phone: posCustPhone,
       address: posCustAddress,
-      isManual: true
+      isManual: true,
+      planType: posExpress ? 'Express' : 'Normal'
     };
 
     saveDB({
@@ -1624,6 +1625,91 @@ export const AdminPortal: React.FC = () => {
                       <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
                         <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>📄</div>
                         <div style={{ fontWeight: '600' }}>No manual orders registered yet.</div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeModule === 'express-wash' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Header Row with Search */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h3 style={{ margin: 0, fontWeight: '800', color: '#0f172a', fontSize: '1.1rem' }}>⚡ Express Wash Queue</h3>
+            <input 
+              type="text" 
+              placeholder="Search express orders..." 
+              value={ordersSearch} 
+              onChange={(e) => setOrdersSearch(e.target.value)} 
+              style={{ padding: '10px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', outline: 'none', width: '320px', fontSize: '0.88rem' }}
+            />
+          </div>
+
+          {/* Orders Table Card */}
+          <div className="card-premium" style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', padding: '0 20px' }}>
+            <div className="table-responsive" style={{ overflowX: 'auto' }}>
+              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left' }}>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Order ID</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Customer</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Date</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Items & Description</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Amount</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Assigned Courier</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Status</th>
+                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {db.orders
+                    .filter(o => o.planType === 'Express')
+                    .filter(o => {
+                      const s = ordersSearch.toLowerCase();
+                      return o.id.toLowerCase().includes(s) || o.customerName.toLowerCase().includes(s);
+                    })
+                    .map(o => (
+                      <tr key={o.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '16px 12px', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>⚡ #{o.id}</td>
+                        <td style={{ padding: '16px 12px', fontWeight: '600', color: '#1e293b' }}>
+                          <div>{o.customerName}</div>
+                          {o.phone && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {o.phone}</span>}
+                        </td>
+                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{o.date}</td>
+                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem' }}>{o.weightItems || 'Express Package'}</td>
+                        <td style={{ padding: '16px 12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
+                        <td style={{ padding: '16px 12px', fontSize: '0.85rem' }}>
+                          {o.courier ? (
+                            <span style={{ fontWeight: '600', color: '#1e293b' }}>👤 {o.courier}</span>
+                          ) : (
+                            <span style={{ color: '#ef4444', fontWeight: '700', background: '#fef2f2', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fee2e2' }}>Pending Assignment</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '16px 12px' }}>
+                          <span className={`status-pill ${o.status.toLowerCase().replace(/\s+/g, '-')}`}>
+                            {o.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: '16px 12px', textAlign: 'center' }}>
+                          <button 
+                            onClick={() => setViewingOrder(o)}
+                            className="secondary-btn" 
+                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', fontWeight: '700' }}
+                          >
+                            👁️ View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  {db.orders.filter(o => o.planType === 'Express').length === 0 && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                        <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>⚡</div>
+                        <div style={{ fontWeight: '600' }}>No express orders currently in queue.</div>
                       </td>
                     </tr>
                   )}

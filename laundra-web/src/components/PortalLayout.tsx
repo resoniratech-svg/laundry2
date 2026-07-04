@@ -73,6 +73,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
     'pos': 'Manual Order',
     'manual-orders-list': 'Manual Order List',
     'daily-orders': 'Daily Orders',
+    'express-wash': 'Express Wash',
     'pending-orders': 'Pending Orders',
     'your-orders': 'Your Orders',
     'delivery-status': 'Delivery Status',
@@ -210,6 +211,14 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
                   className={`sidebar-menu-item ${activeModule === 'daily-orders' ? 'active' : ''}`}
                 >
                   📝 <span>Daily Orders</span>
+                </li>
+              )}
+              {isAllowed('express-wash') && (
+                <li 
+                  onClick={() => onModuleChange('express-wash')} 
+                  className={`sidebar-menu-item ${activeModule === 'express-wash' ? 'active' : ''}`}
+                >
+                  ⚡ <span>Express Wash</span>
                 </li>
               )}
               {isAllowed('monthly-orders') && (
