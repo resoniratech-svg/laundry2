@@ -38,6 +38,8 @@ export const SuperAdminPortal: React.FC = () => {
   const [newCompSlug, setNewCompSlug] = useState('');
   const [newCompAdminEmail, setNewCompAdminEmail] = useState('');
   const [newCompAdminPass, setNewCompAdminPass] = useState('');
+  const [newCompAddress, setNewCompAddress] = useState('');
+  const [newCompPhone, setNewCompPhone] = useState('');
 
   // Password editing state
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
@@ -286,6 +288,8 @@ export const SuperAdminPortal: React.FC = () => {
     const slug = newCompSlug.toLowerCase().trim().replace(/\s+/g, '-');
     const email = newCompAdminEmail.trim().toLowerCase();
     const pass = newCompAdminPass;
+    const address = newCompAddress.trim();
+    const phone = newCompPhone.trim();
 
     if (!name || !slug || !email || !pass) {
       alert('All fields are required!');
@@ -297,13 +301,15 @@ export const SuperAdminPortal: React.FC = () => {
       return;
     }
 
-    createCompany(name, slug, email, pass);
+    createCompany(name, slug, email, pass, address, phone);
     addAuditLog('COMPANY_CREATE', `Created company "${name}" (slug: ${slug})`);
     
     setNewCompName('');
     setNewCompSlug('');
     setNewCompAdminEmail('');
     setNewCompAdminPass('');
+    setNewCompAddress('');
+    setNewCompPhone('');
     setShowAddModal(false);
     alert(`Laundry Company "${name}" has been created successfully!`);
   };
@@ -539,7 +545,14 @@ export const SuperAdminPortal: React.FC = () => {
                   {db.companies.map(c => (
                     <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                       <td style={{ padding: '16px 12px', fontWeight: '700', color: '#64748b' }}>{c.id}</td>
-                      <td style={{ padding: '16px 12px', fontWeight: '700', color: '#1e293b' }}>{c.name}</td>
+                      <td style={{ padding: '16px 12px', fontWeight: '700', color: '#1e293b' }}>
+                        <div>{c.name}</div>
+                        {(c.phone || c.address) && (
+                          <div style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '500', marginTop: '4px' }}>
+                            {c.phone && `📞 ${c.phone}`} {c.address && `📍 ${c.address}`}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem' }}>{c.adminEmail}</td>
                       <td style={{ padding: '16px 12px' }}>
                         <span style={{
@@ -1067,6 +1080,28 @@ export const SuperAdminPortal: React.FC = () => {
                   placeholder="••••••••"
                   value={newCompAdminPass}
                   onChange={(e) => setNewCompAdminPass(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>Company Phone Number</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. +974 5555 1234"
+                  value={newCompPhone}
+                  onChange={(e) => setNewCompPhone(e.target.value)}
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>Company Address</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. 123 Pearl Blvd, Doha"
+                  value={newCompAddress}
+                  onChange={(e) => setNewCompAddress(e.target.value)}
                   style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem' }}
                 />
               </div>

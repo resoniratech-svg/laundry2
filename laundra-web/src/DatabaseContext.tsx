@@ -93,6 +93,8 @@ export interface Company {
   createdAt: string;
   adminEmail: string;
   status: 'Active' | 'Suspended';
+  phone?: string;
+  address?: string;
   subscription: {
     tier: 'Free Trial' | 'Premium' | 'Enterprise';
     status: 'Active' | 'Expired';
@@ -136,7 +138,7 @@ interface DatabaseContextType {
   setActiveRole: (role: string) => void;
   setCurrentDeliveryBoy: (boy: string | null) => void;
   saveDB: (updatedFields: Partial<Database>) => void;
-  createCompany: (name: string, slug: string, adminEmail: string, adminPass: string) => void;
+  createCompany: (name: string, slug: string, adminEmail: string, adminPass: string, address?: string, phone?: string) => void;
   deleteCompany: (companyId: string) => void;
   updateCompany: (companyId: string, updates: Partial<Company>) => void;
   changeActiveCompany: (companyId: string) => void;
@@ -507,7 +509,7 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     loadCompanyData(companyId);
   };
 
-  const createCompany = (name: string, slug: string, adminEmail: string, adminPass: string) => {
+  const createCompany = (name: string, slug: string, adminEmail: string, adminPass: string, address?: string, phone?: string) => {
     const newId = 'comp-' + Math.floor(1000 + Math.random() * 9000);
     const newCompany: Company = {
       id: newId,
@@ -516,6 +518,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createdAt: new Date().toISOString().split('T')[0],
       adminEmail: adminEmail.trim().toLowerCase(),
       status: 'Active',
+      phone: phone || '',
+      address: address || '',
       subscription: {
         tier: 'Free Trial',
         status: 'Active',
@@ -535,8 +539,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       role: 'admin',
       email: adminEmail.trim().toLowerCase(),
       password: adminPass,
-      phone: '',
-      address: '',
+      phone: phone || '',
+      address: address || '',
       status: 'Active',
       createdAt: new Date().toISOString()
     };
