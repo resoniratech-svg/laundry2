@@ -1667,7 +1667,7 @@ export const AdminPortal: React.FC = () => {
                 </thead>
                 <tbody>
                   {db.orders
-                    .filter(o => o.planType === 'Express')
+                    .filter(o => o.planType?.toLowerCase() === 'express')
                     .filter(o => {
                       const s = ordersSearch.toLowerCase();
                       return o.id.toLowerCase().includes(s) || o.customerName.toLowerCase().includes(s);
@@ -1705,7 +1705,7 @@ export const AdminPortal: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                  {db.orders.filter(o => o.planType === 'Express').length === 0 && (
+                  {db.orders.filter(o => o.planType?.toLowerCase() === 'express').length === 0 && (
                     <tr>
                       <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
                         <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>⚡</div>
