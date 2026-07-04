@@ -110,8 +110,8 @@ export const LandingPage: React.FC = () => {
       return;
     }
 
-    // Admin credentials bypass / strict check
-    if (email === 'admin@laundra.com' && pass === 'admin' && role === 'admin') {
+    // Admin credentials bypass / strict check (ONLY for default company Laundra HQ)
+    if (db.activeCompanyId === 'comp-default' && email === 'admin@laundra.com' && pass === 'admin' && role === 'admin') {
       saveDB({ activeRole: 'Admin', currentDeliveryBoy: null });
       localStorage.setItem('ll_activerole', 'Admin');
       localStorage.removeItem('ll_active_delivery_boy');
