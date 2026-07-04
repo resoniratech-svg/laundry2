@@ -1288,7 +1288,7 @@ export const AdminPortal: React.FC = () => {
               </label>
             </div>
 
-            <div className="pos-services-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px', overflowY: 'auto', paddingRight: '8px', flex: 1 }}>
+            <div className="pos-services-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px', overflowY: 'auto', paddingRight: '8px', flex: 1, alignContent: 'start' }}>
               {db.services
                 .filter(s => {
                 const matchSearch = s.name.toLowerCase().includes(posSearch.toLowerCase());
