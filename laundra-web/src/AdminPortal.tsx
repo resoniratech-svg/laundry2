@@ -1174,6 +1174,33 @@ export const AdminPortal: React.FC = () => {
                     >
                       👁️ View
                     </button>
+                    <button 
+                      onClick={() => {
+                        const confirmed = confirm(`Are you sure you want to delete customer "${u.name}"?`);
+                        if (confirmed) {
+                          const nextUsers = db.users.filter(usr => usr.id !== u.id);
+                          const nextCustomers = db.customers.filter(c => c.email.toLowerCase() !== u.email.toLowerCase());
+                          saveDB({ 
+                            users: nextUsers,
+                            customers: nextCustomers
+                          });
+                        }
+                      }}
+                      className="secondary-btn" 
+                      style={{ 
+                        padding: '6px 14px', 
+                        fontSize: '0.8rem', 
+                        background: '#fef2f2',
+                        color: '#ef4444',
+                        border: '1.5px solid #fee2e2',
+                        borderRadius: '8px',
+                        fontWeight: '700',
+                        cursor: 'pointer',
+                        marginLeft: '8px'
+                      }}
+                    >
+                      🗑️ Delete
+                    </button>
                   </td>
                 </tr>
               ))}
