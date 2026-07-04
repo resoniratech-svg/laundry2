@@ -51,6 +51,7 @@ export const SuperAdminPortal: React.FC = () => {
   const [subTier, setSubTier] = useState<'Free Trial' | 'Premium' | 'Enterprise'>('Free Trial');
   const [subStatus, setSubStatus] = useState<'Active' | 'Expired'>('Active');
   const [subExpires, setSubExpires] = useState('');
+  const [trialDays, setTrialDays] = useState(30);
 
   // Local storage mock tables states
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -665,6 +666,15 @@ export const SuperAdminPortal: React.FC = () => {
                           setSubTier(c.subscription?.tier || 'Free Trial');
                           setSubStatus(c.subscription?.status || 'Active');
                           setSubExpires(c.subscription?.expiresAt || '');
+                          if (c.subscription?.expiresAt) {
+                            const exp = new Date(c.subscription.expiresAt);
+                            const today = new Date();
+                            const diff = exp.getTime() - today.getTime();
+                            const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                            setTrialDays(days > 0 ? days : 30);
+                          } else {
+                            setTrialDays(30);
+                          }
                         }}
                         style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', fontWeight: '700', color: '#2563eb', background: '#eff6ff', border: '1.5px solid #dbeafe', cursor: 'pointer' }}
                       >
@@ -1173,14 +1183,42 @@ export const SuperAdminPortal: React.FC = () => {
                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>Subscription Tier</label>
                 <select 
                   value={subTier} 
-                  onChange={(e) => setSubTier(e.target.value as any)} 
+                  onChange={(e) => {
+                    const tier = e.target.value as any;
+                    setSubTier(tier);
+                    if (tier === 'Free Trial') {
+                      const target = new Date();
+                      target.setDate(target.getDate() + trialDays);
+                      setSubExpires(target.toISOString().split('T')[0]);
+                    }
+                  }} 
                   style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem', fontWeight: '600' }}
                 >
-                  <option value="Free Trial">Free Trial (30 Days)</option>
+                  <option value="Free Trial">Free Trial</option>
                   <option value="Premium">Premium tier</option>
                   <option value="Enterprise">Enterprise tier</option>
                 </select>
               </div>
+
+              {subTier === 'Free Trial' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>Trial Duration (Days)</label>
+                  <input 
+                    type="number" 
+                    min={1}
+                    required
+                    value={trialDays}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value) || 1;
+                      setTrialDays(val);
+                      const target = new Date();
+                      target.setDate(target.getDate() + val);
+                      setSubExpires(target.toISOString().split('T')[0]);
+                    }}
+                    style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.88rem' }}
+                  />
+                </div>
+              )}
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px' }}>Status</label>
