@@ -178,98 +178,100 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
           </div>
 
 
-          <ul className="sidebar-menu">
-            {isAllowed('sales-overview') && (
-              <li 
-                onClick={() => onModuleChange('sales-overview')} 
-                className={`sidebar-menu-item ${activeModule === 'sales-overview' ? 'active' : ''}`}
-              >
-                📊 <span>Sales Overview</span>
-              </li>
-            )}
-            {isAllowed('pos') && (
-              <li 
-                onClick={() => onModuleChange('pos')} 
-                className={`sidebar-menu-item ${activeModule === 'pos' ? 'active' : ''}`}
-              >
-                ➕ <span>Manual Order</span>
-              </li>
-            )}
-            {isAllowed('manual-orders-list') && (
-              <li 
-                onClick={() => onModuleChange('manual-orders-list')} 
-                className={`sidebar-menu-item ${activeModule === 'manual-orders-list' ? 'active' : ''}`}
-              >
-                📋 <span>Manual Order List</span>
-              </li>
-            )}
-            {isAllowed('daily-orders') && (
-              <li 
-                onClick={() => onModuleChange('daily-orders')} 
-                className={`sidebar-menu-item ${activeModule === 'daily-orders' ? 'active' : ''}`}
-              >
-                📝 <span>Daily Orders</span>
-              </li>
-            )}
-            {isAllowed('monthly-orders') && (
-              <li 
-                onClick={() => onModuleChange('monthly-orders')} 
-                className={`sidebar-menu-item ${activeModule === 'monthly-orders' ? 'active' : ''}`}
-              >
-                📆 <span>Monthly Orders</span>
-              </li>
-            )}
-            {isAllowed('pending-orders') && (
-              <li 
-                onClick={() => onModuleChange('pending-orders')} 
-                className={`sidebar-menu-item ${activeModule === 'pending-orders' ? 'active' : ''}`}
-              >
-                🕒 <span>Pending Orders</span>
-              </li>
-            )}
-            {isAllowed('your-orders') && (
-              <li 
-                onClick={() => onModuleChange('your-orders')} 
-                className={`sidebar-menu-item ${activeModule === 'your-orders' ? 'active' : ''}`}
-              >
-                📦 <span>Your Orders</span>
-              </li>
-            )}
-            {isAllowed('delivery-status') && (
-              <li 
-                onClick={() => onModuleChange('delivery-status')} 
-                className={`sidebar-menu-item ${activeModule === 'delivery-status' ? 'active' : ''}`}
-              >
-                🚚 <span>Delivery Status</span>
-              </li>
-            )}
-            {isAllowed('services') && (
-              <li 
-                onClick={() => onModuleChange('services')} 
-                className={`sidebar-menu-item ${activeModule === 'services' ? 'active' : ''}`}
-              >
-                🏷️ <span>Services Catalog</span>
-              </li>
-            )}
-            {isAllowed('customer-users') && (
-              <li 
-                onClick={() => onModuleChange('customer-users')} 
-                className={`sidebar-menu-item ${activeModule === 'customer-users' ? 'active' : ''}`}
-              >
-                👥 <span>Customer Users</span>
-              </li>
-            )}
-            {isAllowed('user-management') && (
-              <li 
-                onClick={() => onModuleChange('user-management')} 
-                className={`sidebar-menu-item ${activeModule === 'user-management' ? 'active' : ''}`}
-              >
-                👤 <span>User Management</span>
-              </li>
-            )}
-          </ul>
+          <div className="sidebar-menu-wrapper">
+            <ul className="sidebar-menu">
+              {isAllowed('sales-overview') && (
+                <li 
+                  onClick={() => onModuleChange('sales-overview')} 
+                  className={`sidebar-menu-item ${activeModule === 'sales-overview' ? 'active' : ''}`}
+                >
+                  📊 <span>Sales Overview</span>
+                </li>
+              )}
+              {isAllowed('pos') && (
+                <li 
+                  onClick={() => onModuleChange('pos')} 
+                  className={`sidebar-menu-item ${activeModule === 'pos' ? 'active' : ''}`}
+                >
+                  ➕ <span>Manual Order</span>
+                </li>
+              )}
+              {isAllowed('manual-orders-list') && (
+                <li 
+                  onClick={() => onModuleChange('manual-orders-list')} 
+                  className={`sidebar-menu-item ${activeModule === 'manual-orders-list' ? 'active' : ''}`}
+                >
+                  📋 <span>Manual Order List</span>
+                </li>
+              )}
+              {isAllowed('daily-orders') && (
+                <li 
+                  onClick={() => onModuleChange('daily-orders')} 
+                  className={`sidebar-menu-item ${activeModule === 'daily-orders' ? 'active' : ''}`}
+                >
+                  📝 <span>Daily Orders</span>
+                </li>
+              )}
+              {isAllowed('monthly-orders') && (
+                <li 
+                  onClick={() => onModuleChange('monthly-orders')} 
+                  className={`sidebar-menu-item ${activeModule === 'monthly-orders' ? 'active' : ''}`}
+                >
+                  📆 <span>Monthly Orders</span>
+                </li>
+              )}
+              {isAllowed('pending-orders') && (
+                <li 
+                  onClick={() => onModuleChange('pending-orders')} 
+                  className={`sidebar-menu-item ${activeModule === 'pending-orders' ? 'active' : ''}`}
+                >
+                  🕒 <span>Pending Orders</span>
+                </li>
+              )}
+              {isAllowed('your-orders') && (
+                <li 
+                  onClick={() => onModuleChange('your-orders')} 
+                  className={`sidebar-menu-item ${activeModule === 'your-orders' ? 'active' : ''}`}
+                >
+                  📦 <span>Your Orders</span>
+                </li>
+              )}
+              {isAllowed('delivery-status') && (
+                <li 
+                  onClick={() => onModuleChange('delivery-status')} 
+                  className={`sidebar-menu-item ${activeModule === 'delivery-status' ? 'active' : ''}`}
+                >
+                  🚚 <span>Delivery Status</span>
+                </li>
+              )}
+              {isAllowed('services') && (
+                <li 
+                  onClick={() => onModuleChange('services')} 
+                  className={`sidebar-menu-item ${activeModule === 'services' ? 'active' : ''}`}
+                >
+                  🏷️ <span>Services Catalog</span>
+                </li>
+              )}
+              {isAllowed('customer-users') && (
+                <li 
+                  onClick={() => onModuleChange('customer-users')} 
+                  className={`sidebar-menu-item ${activeModule === 'customer-users' ? 'active' : ''}`}
+                >
+                  👥 <span>Customer Users</span>
+                </li>
+              )}
+              {isAllowed('user-management') && (
+                <li 
+                  onClick={() => onModuleChange('user-management')} 
+                  className={`sidebar-menu-item ${activeModule === 'user-management' ? 'active' : ''}`}
+                >
+                  👤 <span>User Management</span>
+                </li>
+              )}
+            </ul>
+          </div>
 
-          <div style={{ marginTop: 'auto', padding: '16px' }}>
+          <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
             <button 
               onClick={handleSignOut} 
               className="secondary-btn" 
