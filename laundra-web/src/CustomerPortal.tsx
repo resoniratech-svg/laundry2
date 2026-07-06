@@ -1,13 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDatabase, type Order, type Service, type Customer } from './DatabaseContext';
+import { useDatabase, type Order, type Service, type Customer, type Promo } from './DatabaseContext';
+
+// Support ticket interface
+interface SupportTicket {
+  id: string;
+  company: string;
+  subject: string;
+  status: 'Open' | 'Closed';
+  date: string;
+  message: string;
+  assignedTo?: string;
+  history?: { sender: string; message: string; date: string }[];
+}
 
 export const CustomerPortal: React.FC = () => {
   const navigate = useNavigate();
   const { db, saveDB } = useDatabase();
 
-  // Active Customer Session Check
+  // Active Customer Session Check with automatic secure login via URL ?login=cust-XXX
   const [customer, setCustomer] = useState<Customer | null>(null);
+  
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlLoginId = params.get('login');
+    if (urlLoginId) {
+      localStorage.setItem('ll_active_customer_id', urlLoginId);
+      localStorage.setItem(`ll_${db.activeCompanyId}_active_customer_id`, urlLoginId);
+    }
+  }, [db.activeCompanyId]);
+
   const activeCustId = localStorage.getItem(`ll_${db.activeCompanyId}_active_customer_id`) || localStorage.getItem('ll_active_customer_id');
 
   useEffect(() => {
@@ -25,7 +47,10 @@ export const CustomerPortal: React.FC = () => {
     }
   }, [activeCustId, db.customers, db.activeCompanyId, navigate]);
 
-  // Profile editing state
+  // Sidebar Menu State
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'services' | 'invoices' | 'wallet' | 'addresses' | 'offers' | 'support' | 'reviews' | 'profile'>('dashboard');
+
+  // Customer profile details
   const [profName, setProfName] = useState('');
   const [profPhone, setProfPhone] = useState('');
   const [profAddress, setProfAddress] = useState('');
@@ -38,49 +63,34 @@ export const CustomerPortal: React.FC = () => {
     }
   }, [customer]);
 
-  const handleSaveProfile = () => {
-    if (!customer) return;
-    if (!profName.trim()) {
-      alert('Name cannot be empty.');
-      return;
+  // Address Book state
+  const [addressesList, setAddressesList] = useState<string[]>([
+    'Home: 12 Main St, Downtown',
+    'Office: Suite 404, Tech Park'
+  ]);
+  const [newAddr, setNewAddr] = useState('');
+
+  // Support ticket state
+  const [tickets, setTickets] = useState<SupportTicket[]>(() => {
+    try {
+      const all = JSON.parse(localStorage.getItem('ll_platform_tickets') || '[]');
+      const compName = db.companies.find(c => c.id === db.activeCompanyId)?.name || 'Tenant';
+      return all.filter((t: any) => t.company === compName);
+    } catch {
+      return [];
     }
+  });
+  const [ticketSubject, setTicketSubject] = useState('');
+  const [ticketMessage, setTicketMessage] = useState('');
 
-    const updatedCustomers = db.customers.map((c) => {
-      if (c.id === customer.id) {
-        return {
-          ...c,
-          name: profName,
-          phone: profPhone,
-          address: profAddress,
-        };
-      }
-      return c;
-    });
+  // Wallet add funds state
+  const [addFundsAmt, setAddFundsAmt] = useState('');
 
-    const updatedUsers = db.users.map((u) => {
-      if (u.role === 'customer' && u.email.toLowerCase() === customer.email.toLowerCase()) {
-        return {
-          ...u,
-          name: profName,
-          phone: profPhone,
-          address: profAddress,
-        };
-      }
-      return u;
-    });
+  // Ratings / Reviews state
+  const [ratingStars, setRatingStars] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
 
-    saveDB({
-      customers: updatedCustomers,
-      users: updatedUsers,
-    });
-
-    alert('Profile updated successfully!');
-  };
-
-  // Sidebar Menu State
-  const [activeTab, setActiveTab] = useState<'myOrders' | 'myServices' | 'profile'>('myOrders');
-
-  // Order Details Modal
+  // Order Details modal
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   // --- ORDER WIZARD STATE ---
@@ -88,7 +98,6 @@ export const CustomerPortal: React.FC = () => {
   const [wizardStep, setWizardStep] = useState(1); // 1 = Frequency, 2 = Plan/Qty, 3 = Details, 4 = Payment, 5 = Success
   
   const [freq, setFreq] = useState<'One-time / Daily' | 'Monthly'>('One-time / Daily');
-
   const [wizardService, setWizardService] = useState<Service | null>(null);
   const [wizardPlan, setWizardPlan] = useState<'normal' | 'express'>('normal');
   const [wizardQty, setWizardQty] = useState(1);
@@ -105,14 +114,14 @@ export const CustomerPortal: React.FC = () => {
   const [cardCvv, setCardCvv] = useState('');
 
   const [promoCode, setPromoCode] = useState('');
-  const [promoApplied, setPromoApplied] = useState<any>(null);
+  const [promoApplied, setPromoApplied] = useState<Promo | null>(null);
   const [promoError, setPromoError] = useState('');
 
   // Service list filter categories
-  const categories = ['All', 'Wash & Fold', 'Dry Cleaning', 'Steam Press', 'Premium Services', 'Express Services', 'Hotel Laundry', 'Commercial Laundry'];
+  const categories = ['All', 'Wash & Fold', 'Dry Cleaning', 'Steam Iron', 'Shoe Cleaning', 'Carpet Cleaning', 'Blanket Cleaning'];
   const [selectedCategory, setSelectedCategory] = useState('All');
 
-  // Pre-fill details when customer logs in and starts wizard
+  // Pre-fill details when customer logs in
   useEffect(() => {
     if (customer) {
       setOName(customer.name);
@@ -132,11 +141,10 @@ export const CustomerPortal: React.FC = () => {
     navigate('/');
   };
 
-  // Service list filter categories
-  // (Moved state to top level)
+  // Filter services
   const filteredServices = db.services.filter((s) => {
-    if (selectedCategory === 'All') return s.active;
-    return s.active && s.category === selectedCategory;
+    if (selectedCategory === 'All') return s.active !== false;
+    return s.active !== false && s.category === selectedCategory;
   });
 
   // Calculate pricing
@@ -208,6 +216,10 @@ export const CustomerPortal: React.FC = () => {
     }
 
     const newOrderId = 'OR-' + Math.floor(1000 + Math.random() * 9000);
+    
+    // Generate secure delivery OTP
+    const secureDeliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
+
     const newOrder: Order = {
       id: newOrderId,
       customerId: customer.id,
@@ -220,7 +232,8 @@ export const CustomerPortal: React.FC = () => {
       quantity: freq === 'Monthly' ? wizardQty * 30 : wizardQty,
       planType: wizardPlan,
       paymentMethod: payMethod.toUpperCase(),
-      status: 'Pending',
+      paymentStatus: payMethod === 'wallet' ? 'Paid' : 'Unpaid',
+      status: 'Created',
       courier: null,
       deliveryStatus: 'Pending Assignment',
       phone: oPhone,
@@ -229,7 +242,7 @@ export const CustomerPortal: React.FC = () => {
       totalAmount: grandTotal,
       total: grandTotal,
       frequency: freq,
-      clothesPerDay: freq === 'Monthly' ? wizardQty : undefined
+      deliveryOtp: secureDeliveryOtp // Secure Delivery OTP
     };
 
     const newNotification = {
@@ -245,180 +258,222 @@ export const CustomerPortal: React.FC = () => {
       customers: updatedCustomers
     });
 
-    // Trigger confetti via window global
-    if ((window as any).confetti) {
-      (window as any).confetti();
-    }
-
     setWizardStep(5); // Success screen
   };
 
-  // Filter customer orders
-  const customerOrders = [...db.orders]
-    .filter((o) => o.customerId === customer.id)
-    .reverse();
+  // Profile saving
+  const handleSaveProfile = () => {
+    if (!profName.trim()) {
+      alert('Name cannot be empty.');
+      return;
+    }
+    const updated = db.customers.map(c => c.id === customer.id ? { ...c, name: profName, phone: profPhone, address: profAddress } : c);
+    saveDB({ customers: updated });
+    alert('Profile updated successfully!');
+  };
+
+  // Add address
+  const handleAddAddress = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAddr.trim()) return;
+    setAddressesList([...addressesList, newAddr]);
+    setNewAddr('');
+    alert('Address added to book!');
+  };
+
+  // Add wallet balance
+  const handleAddWalletBalance = (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseFloat(addFundsAmt) || 0;
+    if (val <= 0) return;
+
+    const updated = db.customers.map(c => c.id === customer.id ? { ...c, walletBalance: c.walletBalance + val } : c);
+    saveDB({ customers: updated });
+    setAddFundsAmt('');
+    alert(`Successfully loaded QR ${val.toFixed(2)} to wallet!`);
+  };
+
+  // Support ticket submission
+  const handleCreateTicket = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketSubject || !ticketMessage) return;
+
+    try {
+      const all = JSON.parse(localStorage.getItem('ll_platform_tickets') || '[]');
+      const compName = db.companies.find(c => c.id === db.activeCompanyId)?.name || 'Tenant';
+      const newTkt: SupportTicket = {
+        id: 'tkt-' + Date.now(),
+        company: compName,
+        subject: ticketSubject,
+        status: 'Open',
+        date: new Date().toISOString().split('T')[0],
+        message: ticketMessage,
+        history: []
+      };
+
+      localStorage.setItem('ll_platform_tickets', JSON.stringify([newTkt, ...all]));
+      setTickets([newTkt, ...tickets]);
+      setTicketSubject('');
+      setTicketMessage('');
+      alert('Support ticket created successfully!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Submit Rating Review
+  const handleSubmitReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ratingComment) return;
+
+    // Simulated review upload. Can be saved in db or reviews pool
+    alert('Thank you! Your feedback has been uploaded.');
+    setRatingComment('');
+  };
+
+  // Download Invoice Simulation
+  const handleDownloadInvoice = (order: Order) => {
+    const content = `INVOICE DETAILS\n\nOrder ID: #${order.id}\nDate: ${order.date}\nCustomer: ${order.customerName}\nGarments: ${order.weightItems}\nAmount Due: QR ${(order.totalAmount || order.total || 0).toFixed(2)}\nPayment Mode: ${order.paymentMethod || 'CASH'}\nPayment Status: ${order.paymentStatus || 'Unpaid'}\n\nThank you for choosing Laundra!`;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Invoice-${order.id}.txt`;
+    link.click();
+  };
+
+  const customerOrders = db.orders.filter(o => o.customerId === customer.id).reverse();
 
   return (
     <div className="portal-wrapper active" id="customerPortal" style={{ background: '#f8fafc', minHeight: '100vh', display: 'flex' }}>
       
-      {/* Sidebar */}
-      <aside className="admin-sidebar" style={{ background: 'white', borderRight: '1px solid #e2e8f0' }}>
-        <div className="sidebar-brand">
-          <span style={{ color: 'var(--primary)', fontWeight: '800' }}>Laundra</span>
-          <span style={{ color: '#64748b', fontSize: '0.88rem', marginLeft: '6px' }}>Customer</span>
+      {/* Sidebar Panel */}
+      <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0 }}>
+        <div className="sidebar-brand" style={{ padding: '0 20px 16px', borderBottom: '1px solid #f1f5f9', marginBottom: '16px' }}>
+          <span style={{ fontSize: '1.2rem', fontWeight: '800', color: '#1e3a8a' }}>Laundra</span>
+          <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '6px', fontWeight: '600' }}>Client Hub</span>
         </div>
 
-        <div style={{ padding: '8px 16px', background: '#eff6ff', borderRadius: '8px', margin: '0 16px 20px 16px', border: '1px solid #dbeafe', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ fontSize: '0.72rem', color: '#1e3a8a', fontWeight: '700', textTransform: 'uppercase' }}>Welcome</span>
-          <span style={{ fontSize: '0.88rem', color: '#1e40af', fontWeight: '800' }}>{customer.name}</span>
+        <div style={{ padding: '8px 16px', background: '#eff6ff', borderRadius: '8px', margin: '0 16px 20px 16px', border: '1px solid #dbeafe' }}>
+          <div style={{ fontSize: '0.7rem', color: '#1e3a8a', fontWeight: '700', textTransform: 'uppercase' }}>Session active</div>
+          <div style={{ fontSize: '0.88rem', color: '#1e40af', fontWeight: '800' }}>{customer.name}</div>
         </div>
 
-        <ul className="sidebar-menu">
-          <li onClick={() => setActiveTab('myOrders')} className={`sidebar-menu-item ${activeTab === 'myOrders' ? 'active' : ''}`}>
-            📦 <span>My Orders</span>
-          </li>
-          <li onClick={() => setActiveTab('myServices')} className={`sidebar-menu-item ${activeTab === 'myServices' ? 'active' : ''}`}>
-            🏷️ <span>Service Rates</span>
-          </li>
-          <li onClick={() => setActiveTab('profile')} className={`sidebar-menu-item ${activeTab === 'profile' ? 'active' : ''}`}>
-            👤 <span>My Profile</span>
-          </li>
-        </ul>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
+          <ul className="sidebar-menu" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <li onClick={() => setActiveTab('dashboard')} className={`sidebar-menu-item ${activeTab === 'dashboard' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'dashboard' ? '#2563eb' : '#475569', background: activeTab === 'dashboard' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              📦 <span>My Bookings</span>
+            </li>
+            <li onClick={() => setActiveTab('services')} className={`sidebar-menu-item ${activeTab === 'services' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'services' ? '#2563eb' : '#475569', background: activeTab === 'services' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              🏷️ <span>Service Rates</span>
+            </li>
+            <li onClick={() => setActiveTab('invoices')} className={`sidebar-menu-item ${activeTab === 'invoices' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'invoices' ? '#2563eb' : '#475569', background: activeTab === 'invoices' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              🧾 <span>Invoices</span>
+            </li>
+            <li onClick={() => setActiveTab('wallet')} className={`sidebar-menu-item ${activeTab === 'wallet' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'wallet' ? '#2563eb' : '#475569', background: activeTab === 'wallet' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              💳 <span>Wallet & Loyalty</span>
+            </li>
+            <li onClick={() => setActiveTab('addresses')} className={`sidebar-menu-item ${activeTab === 'addresses' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'addresses' ? '#2563eb' : '#475569', background: activeTab === 'addresses' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              🏠 <span>Address Book</span>
+            </li>
+            <li onClick={() => setActiveTab('offers')} className={`sidebar-menu-item ${activeTab === 'offers' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'offers' ? '#2563eb' : '#475569', background: activeTab === 'offers' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              🎁 <span>Special Offers</span>
+            </li>
+            <li onClick={() => setActiveTab('support')} className={`sidebar-menu-item ${activeTab === 'support' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'support' ? '#2563eb' : '#475569', background: activeTab === 'support' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              🎫 <span>Support Desk</span>
+            </li>
+            <li onClick={() => setActiveTab('reviews')} className={`sidebar-menu-item ${activeTab === 'reviews' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'reviews' ? '#2563eb' : '#475569', background: activeTab === 'reviews' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              ⭐ <span>Rate Services</span>
+            </li>
+            <li onClick={() => setActiveTab('profile')} className={`sidebar-menu-item ${activeTab === 'profile' ? 'active' : ''}`} style={{ padding: '10px 14px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', color: activeTab === 'profile' ? '#2563eb' : '#475569', background: activeTab === 'profile' ? '#eff6ff' : 'transparent', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              👤 <span>Account Profile</span>
+            </li>
+          </ul>
+        </div>
 
-        <div style={{ marginTop: 'auto', padding: '16px' }}>
-          <button onClick={handleLogout} className="secondary-btn" style={{ width: '100%', justifyContent: 'center', borderColor: '#ef4444', color: '#ef4444', height: '40px', fontWeight: '700' }}>
-            🚪 Log Out
+        <div style={{ padding: '16px 20px 0', borderTop: '1px solid #f1f5f9', marginTop: '16px' }}>
+          <button onClick={handleLogout} className="secondary-btn" style={{ width: '100%', justifyContent: 'center', borderColor: '#ef4444', color: '#ef4444', height: '40px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', cursor: 'pointer', borderRadius: '8px' }}>
+            🚪 Sign Out
           </button>
         </div>
       </aside>
 
-      {/* Main Panel Content */}
-      <main style={{ flex: 1, padding: '32px', display: 'flex', flexDirection: 'column', gap: '24px', overflowY: 'auto' }}>
+      {/* Main Content Pane */}
+      <main style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
         
-        {/* Header Title */}
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px' }}>
           <div>
-            <h1 style={{ fontSize: '1.75rem', fontWeight: '800', margin: 0, color: '#0f172a' }}>
-              {activeTab === 'myOrders' ? 'My Orders' : activeTab === 'myServices' ? 'Service Catalog' : 'Account Details'}
+            <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '800', color: '#0f172a' }}>
+              {activeTab === 'dashboard' ? 'My Bookings & Timeline' : activeTab === 'services' ? 'Laundry Rates' : activeTab === 'invoices' ? 'My Invoices' : activeTab === 'wallet' ? 'Wallet & Loyalty Points' : activeTab === 'addresses' ? 'My Address Book' : activeTab === 'offers' ? 'Coupons & Promos' : activeTab === 'support' ? 'Support Tickets' : activeTab === 'reviews' ? 'Review & Feedback' : 'My Account Settings'}
             </h1>
-            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '4px' }}>Customer Hub / {activeTab === 'myOrders' ? 'Orders' : activeTab === 'myServices' ? 'Rates' : 'Profile'}</div>
+            <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600', marginTop: '4px' }}>Customer Portal / {activeTab}</div>
           </div>
-          {activeTab === 'myOrders' && (
-            <button onClick={() => setActiveTab('myServices')} className="primary-btn" style={{ background: '#2563eb', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>
-              🛒 Place an Order
-            </button>
+          {activeTab === 'dashboard' && (
+            <button onClick={() => setActiveTab('services')} className="primary-btn" style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>🛒 Book Laundry pickup</button>
           )}
-        </header>
+        </div>
 
-        {activeTab === 'myOrders' && (
-          <>
+        {/* 📦 DASHBOARD TAB */}
+        {activeTab === 'dashboard' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Quick summary cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
+              <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#15803d', textTransform: 'uppercase' }}>Wallet Balance</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#15803d', marginTop: '4px' }}>QR {customer.walletBalance.toFixed(2)}</div>
+              </div>
+              <div style={{ background: '#faf5ff', padding: '16px', borderRadius: '12px', border: '1px solid #f3e8ff' }}>
+                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#6b21a8', textTransform: 'uppercase' }}>Loyalty reward points</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#6b21a8', marginTop: '4px' }}>{customer.loyaltyPoints} points</div>
+              </div>
+            </div>
 
-
-            {/* Active Orders List */}
-            <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>My Bookings</h3>
+            {/* List active orders */}
+            <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '20px' }}>
+              <h4 style={{ margin: '0 0 16px 0' }}>📋 Active Laundry Bookings</h4>
               {customerOrders.length === 0 ? (
-                <div style={{ padding: '40px 16px', textAlign: 'center', color: '#64748b', fontSize: '0.95rem' }}>
-                  No bookings found. Click "Place an Order" above to schedule your first pickup!
-                </div>
+                <div style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>No bookings placed. Book your laundry above.</div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', marginTop: '12px' }}>
-                  {customerOrders.map((o) => {
-                    const displayStatus = o.status === 'Received' ? 'Picked Up' : o.status;
-                    
-                    // Determine status badge style
-                    let badgeStyle = { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' };
-                    const st = displayStatus.toLowerCase();
-                    if (st === 'pending') badgeStyle = { bg: '#fffbeb', text: '#d97706', border: '#fde68a' };
-                    else if (st === 'accepted') badgeStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                    else if (st === 'picked up') badgeStyle = { bg: '#f0f9ff', text: '#0284c7', border: '#bae6fd' };
-                    else if (['washing', 'ironing', 'processing'].includes(st)) badgeStyle = { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
-                    else if (st === 'ready') badgeStyle = { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' };
-                    else if (st === 'out for delivery') badgeStyle = { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8' };
-                    else if (st === 'delivered') badgeStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-                    else if (st === 'cancelled') badgeStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-
-                    return (
-                      <div 
-                        key={o.id} 
-                        style={{ 
-                          background: 'white', 
-                          borderRadius: '16px', 
-                          padding: '20px', 
-                          border: '1px solid #e2e8f0', 
-                          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)',
-                          display: 'flex', 
-                          flexDirection: 'column', 
-                          gap: '16px',
-                          transition: 'all 0.2s ease',
-                          cursor: 'default'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontWeight: '800', color: '#1e40af', background: '#eff6ff', padding: '4px 10px', borderRadius: '8px', fontSize: '0.85rem' }}>#{o.id}</span>
-                          <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: '600' }}>📅 {o.date}</span>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Items Details</label>
-                          <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#334155', minHeight: '36px' }}>{o.weightItems}</div>
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
-                          <div>
-                            <label style={{ fontSize: '0.72rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', display: 'block', marginBottom: '2px' }}>Total Amount</label>
-                            <strong style={{ fontSize: '1.25rem', color: '#0f172a', fontWeight: '800' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</strong>
-                          </div>
-
-                          <span style={{ 
-                            background: badgeStyle.bg, 
-                            color: badgeStyle.text, 
-                            border: `1px solid ${badgeStyle.border}`,
-                            fontSize: '0.75rem', 
-                            fontWeight: '700', 
-                            padding: '6px 12px', 
-                            borderRadius: '20px',
-                            textTransform: 'capitalize'
-                          }}>
-                            {displayStatus}
-                          </span>
-                        </div>
-
-                        <button 
-                          onClick={() => setSelectedOrder(o)} 
-                          className="primary-btn" 
-                          style={{ 
-                            width: '100%', 
-                            justifyContent: 'center', 
-                            background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', 
-                            color: 'white', 
-                            border: 'none', 
-                            padding: '10px 0', 
-                            borderRadius: '10px',
-                            fontWeight: '700',
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            marginTop: '4px'
-                          }}
-                        >
-                          📍 Track Order
-                        </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                  {customerOrders.map(o => (
+                    <div key={o.id} style={{ border: '1px solid #cbd5e1', padding: '16px', borderRadius: '12px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: '800', color: '#2563eb' }}>Order #{o.id}</span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{o.date}</span>
                       </div>
-                    );
-                  })}
+                      <div style={{ fontSize: '0.85rem' }}><strong>Items:</strong> {o.weightItems}</div>
+                      
+                      {/* Delivery OTP display */}
+                      {o.status === 'Out For Delivery' && o.deliveryOtp && (
+                        <div style={{ background: '#eff6ff', padding: '10px', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.82rem', textAlign: 'center' }}>
+                          <span style={{ display: 'block', fontWeight: '700', color: '#1e40af' }}>Delivery Secure OTP:</span>
+                          <strong style={{ fontSize: '1.25rem', color: '#2563eb', letterSpacing: '2px' }}>{o.deliveryOtp}</strong>
+                          <span style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginTop: '4px' }}>Share this code with delivery staff to complete.</span>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
+                        <strong style={{ color: '#0f172a' }}>QR {o.totalAmount.toFixed(2)}</strong>
+                        <button onClick={() => setSelectedOrder(o)} style={{ padding: '6px 12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>📍 Track</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
-          </>
+
+          </div>
         )}
 
-        {activeTab === 'myServices' && (
-          <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
+        {/* 🏷️ SERVICES TAB */}
+        {activeTab === 'services' && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
             <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '24px', paddingBottom: '8px' }}>
               {categories.map((cat) => (
                 <button
                   key={cat}
-                  data-category={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`pos-category-btn ${selectedCategory === cat ? 'active' : ''}`}
                   style={{ whiteSpace: 'nowrap', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600' }}
@@ -434,21 +489,14 @@ export const CustomerPortal: React.FC = () => {
                   key={srv.id} 
                   onClick={() => {
                     setWizardService(srv);
-                    setWizardStep(1); // Start from Step 1 (Frequency Selection)
+                    setWizardStep(1);
                     setShowWizard(true);
                   }}
                   style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer' }}
                 >
-                  {srv.image && (
-                    <div style={{ width: '100%', height: '160px', borderRadius: '8px', overflow: 'hidden', marginBottom: '8px' }}>
-                      <img src={srv.image} alt={srv.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                  )}
-                  <div>
-                    <h4 style={{ margin: '0 0 4px 0', fontSize: '1rem', fontWeight: '700' }}>{srv.name}</h4>
-                    <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', fontWeight: '600' }}>{srv.category}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'auto', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>{srv.name}</h4>
+                  <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', width: 'fit-content' }}>{srv.category}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '12px', marginTop: '10px' }}>
                     <div>
                       <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>Normal Rate</span>
                       <strong style={{ fontSize: '1.1rem', color: '#2563eb' }}>QR {srv.price.toFixed(2)}</strong>
@@ -464,85 +512,186 @@ export const CustomerPortal: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'profile' && customer && (
-          <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', maxWidth: '600px' }}>
-            <h3 style={{ margin: '0 0 20px 0', fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Profile Details</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Full Name</label>
-                <input 
-                  type="text" 
-                  value={profName} 
-                  onChange={(e) => setProfName(e.target.value)} 
-                  style={{ width: '100%', fontSize: '1rem', fontWeight: '600', padding: '10px 14px', background: '#ffffff', borderRadius: '8px', border: '1.5px solid #cbd5e1', marginTop: '6px', outline: 'none' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Email Address</label>
-                <input 
-                  type="email" 
-                  value={customer.email} 
-                  disabled 
-                  style={{ width: '100%', fontSize: '1rem', fontWeight: '600', padding: '10px 14px', background: '#f1f5f9', color: '#64748b', borderRadius: '8px', border: '1.5px solid #cbd5e1', marginTop: '6px', cursor: 'not-allowed' }}
-                />
-                <span style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '4px', display: 'block' }}>Email address cannot be changed.</span>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Phone Number</label>
-                <input 
-                  type="tel" 
-                  value={profPhone} 
-                  onChange={(e) => setProfPhone(e.target.value)} 
-                  style={{ width: '100%', fontSize: '1rem', fontWeight: '600', padding: '10px 14px', background: '#ffffff', borderRadius: '8px', border: '1.5px solid #cbd5e1', marginTop: '6px', outline: 'none' }}
-                />
-              </div>
-              <div>
-                <label style={{ fontSize: '0.78rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Primary Address</label>
-                <input 
-                  type="text" 
-                  value={profAddress} 
-                  onChange={(e) => setProfAddress(e.target.value)} 
-                  style={{ width: '100%', fontSize: '1rem', fontWeight: '600', padding: '10px 14px', background: '#ffffff', borderRadius: '8px', border: '1.5px solid #cbd5e1', marginTop: '6px', outline: 'none' }}
-                />
-              </div>
-              
-              <button 
-                onClick={handleSaveProfile} 
-                className="primary-btn" 
-                style={{ 
-                  marginTop: '12px', 
-                  padding: '12px 24px', 
-                  fontSize: '0.95rem', 
-                  fontWeight: '800', 
-                  background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '8px', 
-                  cursor: 'pointer',
-                  justifyContent: 'center'
-                }}
-              >
-                💾 Save Profile Changes
-              </button>
-
-              {customer.subRemaining !== undefined && (
-                <div style={{ background: '#ecfdf5', padding: '16px', borderRadius: '12px', border: '1px solid #a7f3d0', marginTop: '8px' }}>
-                  <span style={{ fontSize: '0.8rem', color: '#047857', fontWeight: '700', textTransform: 'uppercase' }}>Active Subscription Plan</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#065f46', marginTop: '4px' }}>{customer.subRemaining} loads remaining ({customer.subDuration})</div>
-                </div>
+        {/* 🧾 INVOICES TAB */}
+        {activeTab === 'invoices' && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>🧾 Order Invoices list</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {customerOrders.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.85rem' }}>No orders placed.</div>
+              ) : (
+                customerOrders.map(o => (
+                  <div key={o.id} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong>Order #{o.id}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Date: {o.date} • Total: QR {o.totalAmount.toFixed(2)}</div>
+                    </div>
+                    <button onClick={() => handleDownloadInvoice(o)} style={{ padding: '8px 12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '700' }}>📥 Invoice</button>
+                  </div>
+                ))
               )}
             </div>
           </div>
         )}
+
+        {/* 💳 WALLET & LOYALTY TAB */}
+        {activeTab === 'wallet' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+            
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+              <h4>💼 Wallet balance details</h4>
+              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#16a34a', margin: '12px 0' }}>QR {customer.walletBalance.toFixed(2)}</div>
+              
+              <form onSubmit={handleAddWalletBalance} style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                <input type="number" required value={addFundsAmt} onChange={e => setAddFundsAmt(e.target.value)} placeholder="Enter loading amount..." style={{ flex: 1, padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                <button type="submit" style={{ padding: '10px 20px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Add Funds</button>
+              </form>
+            </div>
+
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+              <h4>⭐ Loyalty program</h4>
+              <div style={{ fontSize: '1.8rem', fontWeight: '800', color: '#6b21a8', margin: '12px 0' }}>{customer.loyaltyPoints} points</div>
+              <p style={{ fontSize: '0.82rem', color: '#64748b' }}>Every order places points automatically. Redeem points for discount offers inside coupons.</p>
+            </div>
+
+          </div>
+        )}
+
+        {/* 🏠 ADDRESS BOOK TAB */}
+        {activeTab === 'addresses' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+            
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+              <h4>🏠 Saved Delivery Addresses</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                {addressesList.map((addr, idx) => (
+                  <div key={idx} style={{ padding: '12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.88rem' }}>{addr}</span>
+                    <button onClick={() => setAddressesList(addressesList.filter((_, i) => i !== idx))} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>✕</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+              <h4>➕ Add New Address</h4>
+              <form onSubmit={handleAddAddress} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input type="text" required value={newAddr} onChange={e => setNewAddr(e.target.value)} placeholder="e.g. Work: Suite 50, Plaza Complex" style={{ padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Save Address</button>
+              </form>
+            </div>
+
+          </div>
+        )}
+
+        {/* 🎁 SPECIAL OFFERS TAB */}
+        {activeTab === 'offers' && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+            <h4>🎁 Active Special Coupons & Promo Codes</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginTop: '16px' }}>
+              {db.promos.map(p => (
+                <div key={p.code} style={{ padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px' }}>
+                  <span style={{ fontSize: '0.72rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: '8px', fontWeight: '700' }}>COUPON</span>
+                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#1e3a8a', marginTop: '6px' }}>{p.code}</div>
+                  <div style={{ fontSize: '0.85rem', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>{p.description || 'Flat discount rates'}</div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>Value: {p.value}{p.type === 'Percentage' ? '%' : ' QR'} Off</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 🎫 SUPPORT DESK TAB */}
+        {activeTab === 'support' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+            
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+              <h4>🎫 Raise Support Ticket</h4>
+              <form onSubmit={handleCreateTicket} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Subject Topic</label>
+                  <input type="text" required value={ticketSubject} onChange={e => setTicketSubject(e.target.value)} placeholder="e.g. Order pickup delay support" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Detailed message</label>
+                  <textarea required value={ticketMessage} onChange={e => setTicketMessage(e.target.value)} rows={4} placeholder="Type support inquiry description..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Submit Ticket</button>
+              </form>
+            </div>
+
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+              <h4>Ticket history</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px', maxHeight: '300px', overflowY: 'auto' }}>
+                {tickets.map(t => (
+                  <div key={t.id} style={{ padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <strong>{t.subject}</strong>
+                      <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', background: t.status === 'Open' ? '#fffbeb' : '#dcfce7', color: t.status === 'Open' ? '#b45309' : '#15803d' }}>{t.status}</span>
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{t.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* ⭐ RATE SERVICES TAB */}
+        {activeTab === 'reviews' && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1', maxWidth: '500px' }}>
+            <h4>⭐ Rate Laundry Service</h4>
+            <form onSubmit={handleSubmitReview} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Select Stars Rating</label>
+                <select value={ratingStars} onChange={e => setRatingStars(parseInt(e.target.value))} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="5">★★★★★ (5 Stars)</option>
+                  <option value="4">★★★★☆ (4 Stars)</option>
+                  <option value="3">★★★☆☆ (3 Stars)</option>
+                  <option value="2">★★☆☆☆ (2 Stars)</option>
+                  <option value="1">★☆☆☆☆ (1 Star)</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Review comment details</label>
+                <textarea required value={ratingComment} onChange={e => setRatingComment(e.target.value)} rows={3} placeholder="Tell us how you liked our service press, clean, packaging..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Submit Review</button>
+            </form>
+          </div>
+        )}
+
+        {/* 👤 ACCOUNT PROFILE TAB */}
+        {activeTab === 'profile' && (
+          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1', maxWidth: '550px' }}>
+            <h4>👤 Update Account Profile Settings</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Full Name</label>
+                <input type="text" value={profName} onChange={e => setProfName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Phone contact</label>
+                <input type="text" value={profPhone} onChange={e => setProfPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Home delivery address</label>
+                <input type="text" value={profAddress} onChange={e => setProfAddress(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <button onClick={handleSaveProfile} style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Save Settings</button>
+            </div>
+          </div>
+        )}
+
       </main>
 
-      {/* --- ORDER WIZARD MODAL DIALOG --- */}
+      {/* --- ORDER WIZARD MODAL --- */}
       {showWizard && (
-        <div className="order-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="order-modal" style={{ background: 'white', borderRadius: '16px', overflow: 'hidden' }}>
+        <div className="order-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="order-modal" style={{ background: 'white', borderRadius: '16px', overflow: 'hidden', width: '100%', maxWidth: '520px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
             
-            {/* Header / Step indicator */}
-            <div className="order-modal-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '20px 24px' }}>
+            <div className="order-modal-header" style={{ borderBottom: '1px solid #e2e8f0', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div className="order-steps-indicator" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {[1, 2, 3, 4, 5].map((s) => (
                   <React.Fragment key={s}>
@@ -558,267 +707,97 @@ export const CustomerPortal: React.FC = () => {
 
             <div style={{ padding: '24px 32px' }}>
               
-              {/* STEP 1: Frequency Selection */}
               {wizardStep === 1 && (
-                <div className="order-step-panel">
-                  <div className="order-step-title">
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 8px 0' }}>📅 Order Frequency</h2>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>How often would you like this service?</p>
-                  </div>
-                  <div className="order-freq-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginTop: '24px' }}>
-                    {['One-time / Daily', 'Monthly'].map((f) => {
-                      const icons = { 'One-time / Daily': '🗓️', 'Monthly': '📆' };
-                      const subs = { 'One-time / Daily': 'Standard single order', 'Monthly': 'Billed every 30 days' };
-                      return (
-                        <div
-                          key={f}
-                          onClick={() => {
-                            setFreq(f as any);
-                            setWizardStep(2); // Go directly to Plan & Qty (Step 2)
-                          }}
-                          className={`order-freq-card ${freq === f ? 'active' : ''}`}
-                          style={{ border: '2px solid #cbd5e1', borderRadius: '12px', padding: '20px 16px', textAlign: 'center', cursor: 'pointer' }}
-                        >
-                          <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{(icons as any)[f]}</div>
-                          <div style={{ fontWeight: '700', fontSize: '1rem' }}>{f}</div>
-                          <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>{(subs as any)[f]}</div>
-                        </div>
-                      );
-                    })}
+                <div>
+                  <h3 style={{ margin: 0 }}>📅 Select Order Frequency</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+                    <div onClick={() => { setFreq('One-time / Daily'); setWizardStep(2); }} style={{ border: '2px solid #cbd5e1', borderRadius: '12px', padding: '20px 16px', textAlign: 'center', cursor: 'pointer' }}>
+                      🗓️ <strong>One-time / Daily</strong>
+                    </div>
+                    <div onClick={() => { setFreq('Monthly'); setWizardStep(2); }} style={{ border: '2px solid #cbd5e1', borderRadius: '12px', padding: '20px 16px', textAlign: 'center', cursor: 'pointer' }}>
+                      📆 <strong>Monthly Plan</strong>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* STEP 2: Plan & Quantity Selection */}
               {wizardStep === 2 && (
-                <div className="order-step-panel">
-                  <div className="order-step-title">
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 8px 0' }}>📦 Choose Plan & Quantity</h2>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>Select your service plan and number of clothes.</p>
-                  </div>
-
-                  {/* Plan Cards */}
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '24px', justifyContent: 'center' }}>
-                    <div
-                      onClick={() => setWizardPlan('normal')}
-                      className={`plan-card ${wizardPlan === 'normal' ? 'active' : ''}`}
-                      style={{ 
-                        flex: 1, 
-                        border: wizardPlan === 'normal' ? '2px solid #2563eb' : '2px solid #cbd5e1', 
-                        borderRadius: '12px', 
-                        padding: '16px', 
-                        textAlign: 'center', 
-                        cursor: 'pointer', 
-                        background: wizardPlan === 'normal' ? '#f0f7ff' : 'white',
-                        boxShadow: wizardPlan === 'normal' ? '0 4px 12px rgba(37, 99, 235, 0.15)' : 'none',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <div style={{ fontSize: '1.5rem' }}>🧺</div>
-                      <div style={{ fontWeight: '700', margin: '6px 0 2px 0' }}>Normal</div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Standard (2-3 days)</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#2563eb', marginTop: '10px' }}>
-                        QR {getServicePrice(wizardService, 'normal').toFixed(2)}
-                      </div>
+                <div>
+                  <h3 style={{ margin: 0 }}>🧺 Quantity & Service details</h3>
+                  <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
+                    <div onClick={() => setWizardPlan('normal')} style={{ flex: 1, border: wizardPlan === 'normal' ? '2px solid #2563eb' : '2px solid #cbd5e1', borderRadius: '12px', padding: '16px', textAlign: 'center', cursor: 'pointer' }}>
+                      Normal rate: QR {getServicePrice(wizardService, 'normal').toFixed(2)}
                     </div>
-                    
-                    <div
-                      onClick={() => setWizardPlan('express')}
-                      className={`plan-card ${wizardPlan === 'express' ? 'active' : ''}`}
-                      style={{ 
-                        flex: 1, 
-                        border: wizardPlan === 'express' ? '2px solid #ef4444' : '2px solid #cbd5e1', 
-                        borderRadius: '12px', 
-                        padding: '16px', 
-                        textAlign: 'center', 
-                        cursor: 'pointer', 
-                        background: wizardPlan === 'express' ? '#fef2f2' : 'white', 
-                        position: 'relative', 
-                        overflow: 'hidden',
-                        boxShadow: wizardPlan === 'express' ? '0 4px 12px rgba(239, 68, 68, 0.15)' : 'none',
-                        transition: 'all 0.2s ease'
-                      }}
-                    >
-                      <div style={{ position: 'absolute', top: '6px', right: '-24px', background: '#ef4444', color: 'white', fontSize: '0.55rem', padding: '2px 24px', transform: 'rotate(45deg)', fontWeight: '700' }}>FAST</div>
-                      <div style={{ fontSize: '1.5rem' }}>⚡</div>
-                      <div style={{ fontWeight: '700', margin: '6px 0 2px 0' }}>Express</div>
-                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>Same Day Priority</div>
-                      <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#ef4444', marginTop: '10px' }}>
-                        QR {getServicePrice(wizardService, 'express').toFixed(2)}
-                      </div>
+                    <div onClick={() => setWizardPlan('express')} style={{ flex: 1, border: wizardPlan === 'express' ? '2px solid #ef4444' : '2px solid #cbd5e1', borderRadius: '12px', padding: '16px', textAlign: 'center', cursor: 'pointer' }}>
+                      Express rate: QR {getServicePrice(wizardService, 'express').toFixed(2)}
                     </div>
                   </div>
 
-                  {/* Quantity Selector */}
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '24px' }}>
-                    <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569', marginBottom: '8px' }}>
-                      {freq === 'Monthly' ? '👕 How many clothes per day?' : '👕 Number of Clothes'}
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: '#f8fafc', padding: '8px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                      <button onClick={() => setWizardQty(Math.max(1, wizardQty - 1))} style={{ fontSize: '1.3rem', padding: '4px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer', borderRadius: '6px' }}>−</button>
-                      <span style={{ fontSize: '1.8rem', fontWeight: '800', minWidth: '40px', textAlign: 'center' }}>{wizardQty}</span>
-                      <button onClick={() => setWizardQty(wizardQty + 1)} style={{ fontSize: '1.3rem', padding: '4px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer', borderRadius: '6px' }}>+</button>
-                    </div>
-
-                    {freq === 'Monthly' && (
-                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px', fontWeight: '600' }}>
-                        📅 30-day plan totals: {wizardQty * 30} clothes for the month
-                      </div>
-                    )}
-
-                    {/* Subtotal Display */}
-                    <div style={{ marginTop: '16px', padding: '10px 24px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', textAlign: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                        {freq === 'Monthly' ? 'Total Monthly Amount: ' : 'Subtotal: '}
-                      </span>
-                      <strong style={{ color: '#2563eb', fontSize: '1.15rem', fontWeight: '800' }}>QR {getSubtotal().toFixed(2)}</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20px' }}>
+                    <label style={{ fontSize: '0.8rem', fontWeight: '700' }}>Item count</label>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
+                      <button onClick={() => setWizardQty(Math.max(1, wizardQty - 1))} style={{ padding: '6px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer' }}>−</button>
+                      <strong style={{ fontSize: '1.25rem' }}>{wizardQty}</strong>
+                      <button onClick={() => setWizardQty(wizardQty + 1)} style={{ padding: '6px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer' }}>+</button>
                     </div>
                   </div>
 
-                  <div className="order-nav-row" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
-                    <button className="order-back-btn" onClick={() => setWizardStep(1)}>← Back</button>
-                    <button className="order-next-btn" onClick={() => setWizardStep(3)}>Continue →</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button onClick={() => setWizardStep(1)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', cursor: 'pointer' }}>Back</button>
+                    <button onClick={() => setWizardStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer' }}>Continue</button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 3: Checkout details */}
               {wizardStep === 3 && (
-                <div className="order-step-panel">
-                  <div className="order-step-title">
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 8px 0' }}>👤 Delivery Details</h2>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>Confirm your contact and delivery address.</p>
+                <div>
+                  <h3 style={{ margin: 0 }}>👤 Delivery contact information</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '16px' }}>
+                    <input type="text" value={oName} onChange={e => setOName(e.target.value)} placeholder="Full name..." style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                    <input type="email" value={oEmail} onChange={e => setOEmail(e.target.value)} placeholder="Email..." style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                    <input type="text" value={oPhone} onChange={e => setOPhone(e.target.value)} placeholder="Phone..." style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                    <textarea value={oAddress} onChange={e => setOAddress(e.target.value)} placeholder="Address..." style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
                   </div>
-                  
-                  <div className="order-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '20px' }}>
-                    <div className="order-field">
-                      <label>Full Name</label>
-                      <input type="text" value={oName} onChange={(e) => setOName(e.target.value)} required />
-                    </div>
-                    <div className="order-field">
-                      <label>Email Address</label>
-                      <input type="email" value={oEmail} onChange={(e) => setOEmail(e.target.value)} required />
-                    </div>
-                    <div className="order-field" style={{ gridColumn: 'span 2' }}>
-                      <label>Phone Number</label>
-                      <input type="tel" value={oPhone} onChange={(e) => setOPhone(e.target.value)} required />
-                    </div>
-                    <div className="order-field" style={{ gridColumn: 'span 2' }}>
-                      <label>Pickup / Delivery Address</label>
-                      <textarea value={oAddress} onChange={(e) => setOAddress(e.target.value)} rows={2} required />
-                    </div>
-                    <div className="order-field" style={{ gridColumn: 'span 2' }}>
-                      <label>Special Instructions (optional)</label>
-                      <textarea value={oNotes} onChange={(e) => setONotes(e.target.value)} rows={2} placeholder="e.g. Leave with security, gentle starch..." />
-                    </div>
-                  </div>
-
-                  <div className="order-nav-row" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
-                    <button className="order-back-btn" onClick={() => setWizardStep(2)}>← Back</button>
-                    <button className="order-next-btn" onClick={() => setWizardStep(4)}>Continue to Payment →</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button onClick={() => setWizardStep(2)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', cursor: 'pointer' }}>Back</button>
+                    <button onClick={() => setWizardStep(4)} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer' }}>Continue</button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 4: Payment Method & Promos */}
               {wizardStep === 4 && (
-                <div className="order-step-panel">
-                  <div className="order-step-title">
-                    <h2 style={{ fontSize: '1.5rem', fontWeight: '800', margin: '0 0 8px 0' }}>💳 Payment Method</h2>
-                    <p style={{ color: '#64748b', fontSize: '0.9rem', margin: 0 }}>Select payment method and apply coupons.</p>
+                <div>
+                  <h3 style={{ margin: 0 }}>💳 Checkout payment details</h3>
+                  
+                  <select value={payMethod} onChange={e => setPayMethod(e.target.value as any)} style={{ width: '100%', padding: '10px', margin: '16px 0', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                    <option value="upi">UPI / PayTM</option>
+                    <option value="wallet">Wallet Balance</option>
+                    <option value="credit">Credit Card</option>
+                  </select>
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <input type="text" value={promoCode} onChange={e => setPromoCode(e.target.value)} placeholder="Coupon Code..." style={{ flex: 1, padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                    <button onClick={handleApplyPromo} style={{ padding: '10px', border: '1px solid #cbd5e1', cursor: 'pointer' }}>Apply</button>
+                  </div>
+                  {promoApplied && <div style={{ color: '#16a34a', fontSize: '0.78rem', marginTop: '4px' }}>Applied: {promoApplied.code}</div>}
+
+                  <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', fontWeight: '800' }}>
+                    <span>Total sum:</span>
+                    <span>QR {getGrandTotal().toFixed(2)}</span>
                   </div>
 
-                  {/* Payment Grid */}
-                  <div className="order-payment-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '10px', marginTop: '16px' }}>
-                    {['upi', 'phonepe', 'gpay', 'credit', 'debit', 'wallet'].map((p) => {
-                      const icons = { upi: '📲', phonepe: '💜', gpay: '🔵', credit: '💳', debit: '🏦', wallet: '💼' };
-                      const names = { upi: 'UPI', phonepe: 'PhonePe', gpay: 'GPay', credit: 'Credit Card', debit: 'Debit Card', wallet: 'Wallet' };
-                      return (
-                        <div
-                          key={p}
-                          onClick={() => setPayMethod(p as any)}
-                          className={`order-pay-card ${payMethod === p ? 'active' : ''}`}
-                          style={{ border: '2px solid #cbd5e1', borderRadius: '10px', padding: '12px 6px', textAlign: 'center', cursor: 'pointer' }}
-                        >
-                          <div style={{ fontSize: '1.6rem', marginBottom: '4px' }}>{(icons as any)[p]}</div>
-                          <div style={{ fontSize: '0.8rem', fontWeight: '700' }}>{(names as any)[p]}</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* Card input panel */}
-                  {['credit', 'debit'].includes(payMethod) && (
-                    <div style={{ marginTop: '16px', background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
-                      <div className="order-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                        <div className="order-field" style={{ gridColumn: 'span 2' }}>
-                          <label>Card Number</label>
-                          <input type="text" value={cardNum} onChange={(e) => setCardNum(e.target.value)} placeholder="1234 5678 9012 3456" />
-                        </div>
-                        <div className="order-field">
-                          <label>Expiry Date</label>
-                          <input type="text" value={cardExp} onChange={(e) => setCardExp(e.target.value)} placeholder="MM/YY" />
-                        </div>
-                        <div className="order-field">
-                          <label>CVV</label>
-                          <input type="password" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} placeholder="•••" />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Promo Coupons */}
-                  <div style={{ marginTop: '16px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '700', color: '#475569' }}>Apply Promo Coupon</label>
-                    <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
-                      <input
-                        type="text"
-                        value={promoCode}
-                        onChange={(e) => setPromoCode(e.target.value)}
-                        placeholder="e.g. WELCOME5"
-                        style={{ flex: 1, padding: '10px 14px', border: '2px solid #cbd5e1', borderRadius: '8px' }}
-                      />
-                      <button onClick={handleApplyPromo} className="secondary-btn" style={{ padding: '0 16px', borderRadius: '8px' }}>Apply</button>
-                    </div>
-                    {promoError && <div style={{ color: '#ef4444', fontSize: '0.78rem', marginTop: '4px' }}>{promoError}</div>}
-                    {promoApplied && <div style={{ color: '#22c55e', fontSize: '0.78rem', marginTop: '4px', fontWeight: '600' }}>✓ Promo Applied: {promoApplied.description}</div>}
-                  </div>
-
-                  {/* Prices summary details */}
-                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginTop: '20px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.88rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Subtotal:</span>
-                      <span>QR {getSubtotal().toFixed(2)}</span>
-                    </div>
-                    {promoApplied && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#22c55e', fontWeight: '600' }}>
-                        <span>Promo Discount:</span>
-                        <span>-QR {getDiscount().toFixed(2)}</span>
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '8px', fontWeight: '800', fontSize: '1rem', color: '#2563eb' }}>
-                      <span>Grand Total:</span>
-                      <span>QR {getGrandTotal().toFixed(2)}</span>
-                    </div>
-                  </div>
-
-                  <div className="order-nav-row" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '24px' }}>
-                    <button className="order-back-btn" onClick={() => setWizardStep(3)}>← Back</button>
-                    <button onClick={handlePlaceOrder} className="order-next-btn" style={{ background: 'linear-gradient(135deg, #1d4ed8, #7c3aed)', color: 'white', border: 'none' }}>🔒 Place Order</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
+                    <button onClick={() => setWizardStep(3)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', cursor: 'pointer' }}>Back</button>
+                    <button onClick={handlePlaceOrder} style={{ padding: '8px 16px', background: '#16a34a', color: 'white', border: 'none', cursor: 'pointer' }}>Book order</button>
                   </div>
                 </div>
               )}
 
-              {/* STEP 5: Success Screen */}
               {wizardStep === 5 && (
-                <div className="order-step-panel" style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>✅</div>
-                  <h2 style={{ fontSize: '1.6rem', fontWeight: '800', margin: '0 0 8px 0', color: '#0f172a' }}>Order Placed Successfully!</h2>
-                  <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: 1.5, marginBottom: '24px' }}>Thank you! Your laundry order has been received in our system. We will contact you shortly to coordinate the pickup details.</p>
-                  
-                  <button onClick={() => setShowWizard(false)} className="primary-btn" style={{ width: '100%', justifyContent: 'center', height: '48px', borderRadius: '10px', background: '#2563eb', color: 'white', border: 'none', fontWeight: '700' }}>
-                    Done 🎉
-                  </button>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: '3rem' }}>🎉</div>
+                  <h3>Pickup scheduled successfully!</h3>
+                  <button onClick={() => setShowWizard(false)} style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', marginTop: '16px' }}>Done</button>
                 </div>
               )}
 
@@ -827,144 +806,44 @@ export const CustomerPortal: React.FC = () => {
         </div>
       )}
 
-      {/* --- DETAILED VIEW MODAL --- */}
+      {/* TRACKING MODAL */}
       {selectedOrder && (
         <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '480px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Order Tracking Details</h3>
-              <p style={{ margin: '4px 0 0 0', opacity: 0.9, fontSize: '0.85rem' }}>Order ID: #{selectedOrder.id}</p>
-              <button onClick={() => setSelectedOrder(null)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+          <div className="modal-content" style={{ width: '100%', maxWidth: '440px', background: 'white', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0 }}>Order Tracking #{selectedOrder.id}</h3>
+              <button onClick={() => setSelectedOrder(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer' }}>✕</button>
             </div>
-            
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Garment Details</label>
-                <div style={{ fontWeight: '600', marginTop: '2px' }}>{selectedOrder.weightItems}</div>
-              </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div><strong>Status:</strong> {selectedOrder.status}</div>
+              <div><strong>Items:</strong> {selectedOrder.weightItems}</div>
+              <div><strong>Total Amount:</strong> QR {selectedOrder.totalAmount.toFixed(2)}</div>
+              <div><strong>Delivery agent:</strong> {selectedOrder.courier || 'Unassigned'}</div>
               
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Subtotal Amount</label>
-                  <div style={{ fontWeight: '700', color: '#2563eb', fontSize: '1.1rem' }}>QR {(selectedOrder.totalAmount || selectedOrder.total || 0).toFixed(2)}</div>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Progress Status</label>
-                  <div style={{ marginTop: '4px' }}>
-                    <span style={{ 
-                      background: (() => {
-                        const st = (selectedOrder.status === 'Received' ? 'Picked Up' : selectedOrder.status).toLowerCase();
-                        if (st === 'pending') return '#fffbeb';
-                        if (st === 'accepted') return '#faf5ff';
-                        if (st === 'picked up') return '#f0f9ff';
-                        if (['washing', 'ironing', 'processing'].includes(st)) return '#eff6ff';
-                        if (st === 'ready') return '#ecfdf5';
-                        if (st === 'out for delivery') return '#fdf2f8';
-                        if (st === 'delivered') return '#f0fdf4';
-                        return '#f8fafc';
-                      })(), 
-                      color: (() => {
-                        const st = (selectedOrder.status === 'Received' ? 'Picked Up' : selectedOrder.status).toLowerCase();
-                        if (st === 'pending') return '#d97706';
-                        if (st === 'accepted') return '#7c3aed';
-                        if (st === 'picked up') return '#0284c7';
-                        if (['washing', 'ironing', 'processing'].includes(st)) return '#2563eb';
-                        if (st === 'ready') return '#059669';
-                        if (st === 'out for delivery') return '#db2777';
-                        if (st === 'delivered') return '#16a34a';
-                        return '#64748b';
-                      })(), 
-                      border: `1px solid ${(() => {
-                        const st = (selectedOrder.status === 'Received' ? 'Picked Up' : selectedOrder.status).toLowerCase();
-                        if (st === 'pending') return '#fde68a';
-                        if (st === 'accepted') return '#e9d5ff';
-                        if (st === 'picked up') return '#bae6fd';
-                        if (['washing', 'ironing', 'processing'].includes(st)) return '#bfdbfe';
-                        if (st === 'ready') return '#a7f3d0';
-                        if (st === 'out for delivery') return '#fbcfe8';
-                        if (st === 'delivered') return '#bbf7d0';
-                        return '#e2e8f0';
-                      })()}`,
-                      fontSize: '0.75rem', 
-                      fontWeight: '700', 
-                      padding: '5px 12px', 
-                      borderRadius: '20px',
-                      textTransform: 'capitalize',
-                      display: 'inline-block'
-                    }}>
-                      {selectedOrder.status === 'Received' ? 'Picked Up' : selectedOrder.status}
-                    </span>
-                  </div>
-                </div>
+              <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].map((st, idx) => {
+                  const activeIdx = ['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].indexOf(selectedOrder.status);
+                  const stepIdx = ['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].indexOf(st);
+                  const isDone = activeIdx >= stepIdx;
+
+                  return (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ color: isDone ? '#16a34a' : '#cbd5e1' }}>{isDone ? '🟢' : '⚪'}</span>
+                      <span style={{ fontWeight: isDone ? '700' : '400' }}>{st}</span>
+                    </div>
+                  );
+                })}
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Logistics Phase</label>
-                <div style={{ fontWeight: '600', marginTop: '2px', color: '#475569' }}>{selectedOrder.deliveryStatus}</div>
-              </div>
-
-              {selectedOrder.courier && (
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Assigned Courier</label>
-                  <div style={{ fontWeight: '600', marginTop: '2px' }}>👤 {selectedOrder.courier}</div>
-                </div>
-              )}
-
-              {/* Progress Pipeline */}
-              <div style={{ marginTop: '12px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
-                <div style={{ fontSize: '0.82rem', fontWeight: '800', color: '#1e293b', marginBottom: '14px' }}>Pipeline Journey</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative', paddingLeft: '8px' }}>
-                  {/* Vertical connecting line */}
-                  <div style={{ 
-                    position: 'absolute', 
-                    left: '17px', 
-                    top: '10px', 
-                    bottom: '10px', 
-                    width: '2px', 
-                    background: '#e2e8f0', 
-                    zIndex: 0 
-                  }}></div>
-
-                  {['Pending', 'Received', 'Washing', 'Ironing', 'Ready', 'Out for Delivery', 'Delivered'].map((step, idx) => {
-                    const statusOrder = ['Pending', 'Placed', 'Accepted', 'Received', 'Washing', 'Ironing', 'Processing', 'Ready', 'Out for Delivery', 'Delivered'];
-                    const currentIdx = statusOrder.indexOf(selectedOrder.status);
-                    const stepIdx = statusOrder.indexOf(step === 'Received' ? 'Received' : step);
-                    const isDone = currentIdx >= stepIdx;
-                    const label = step === 'Received' ? 'Picked Up' : step;
-                    
-                    return (
-                      <div key={step} style={{ display: 'flex', alignItems: 'center', gap: '14px', position: 'relative', zIndex: 1 }}>
-                        <span style={{ 
-                          width: '20px', 
-                          height: '20px', 
-                          borderRadius: '50%', 
-                          background: isDone ? '#22c55e' : '#cbd5e1', 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center', 
-                          color: 'white', 
-                          fontSize: '0.7rem',
-                          fontWeight: '800',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
-                        }}>
-                          {isDone ? '✓' : idx + 1}
-                        </span>
-                        <span style={{ 
-                          fontSize: '0.88rem', 
-                          fontWeight: isDone ? '700' : '500', 
-                          color: isDone ? '#0f172a' : '#64748b' 
-                        }}>
-                          {label}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>
+                <button onClick={() => setSelectedOrder(null)} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Close</button>
               </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 };

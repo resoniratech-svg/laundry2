@@ -609,6 +609,33 @@ export const AdminPortal: React.FC = () => {
     window.open(`https://api.whatsapp.com/send?text=Scan this secure link to access your customer laundry portal: http://localhost:5173/customer?login=${cust.id}`);
   };
 
+  const handleDisableQR = (cust: Customer) => {
+    const updated = db.customers.map(c => c.id === cust.id ? { ...c, qrDisabled: true } : c);
+    saveDB({ customers: updated });
+    addActivity('Customer', `Disabled lost QR Code for customer: ${cust.name}`);
+    alert(`QR code for ${cust.name} has been disabled. The old link is now invalid.`);
+    setQrCust({ ...cust, qrDisabled: true });
+  };
+
+  const handleGenerateNewSecureQR = (cust: Customer) => {
+    const newId = 'cust-' + Math.floor(10000 + Math.random() * 90000);
+    const updatedCustomers = db.customers.map(c => c.id === cust.id ? { ...c, id: newId, qrDisabled: false } : c);
+    const updatedUsers = db.users.map(u => u.role === 'customer' && u.email === cust.email ? { ...u, id: newId } : u);
+    const updatedOrders = db.orders.map(o => o.customerId === cust.id ? { ...o, customerId: newId } : o);
+
+    saveDB({
+      customers: updatedCustomers,
+      users: updatedUsers,
+      orders: updatedOrders
+    });
+
+    addActivity('Customer', `Regenerated new secure QR code for customer: ${cust.name}`);
+    alert(`New secure QR code generated for ${cust.name}! Old QR links are now permanently invalid.`);
+    
+    const newMatch = updatedCustomers.find(c => c.id === newId)!;
+    setQrCust(newMatch);
+  };
+
   // Reviews replies
   const handleReplyReview = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1791,25 +1818,41 @@ export const AdminPortal: React.FC = () => {
       {/* QR CODE POPUP */}
       {qrCust && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '380px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
-            <div style={{ background: 'linear-gradient(135deg, #16a34a, #10b981)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Secure Customer QR Link</h3>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: qrCust.qrDisabled ? 'linear-gradient(135deg, #ef4444, #b91c1c)' : 'linear-gradient(135deg, #16a34a, #10b981)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>
+                {qrCust.qrDisabled ? '🚨 QR Disabled (Lost)' : 'Secure Customer QR Link'}
+              </h3>
               <button onClick={() => setQrCust(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
             </div>
 
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
-              <div style={{ width: '180px', height: '180px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '5rem', borderRadius: '12px' }}>
+              <div style={{ width: '150px', height: '150px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4.5rem', borderRadius: '12px', position: 'relative' }}>
                 📱
+                {qrCust.qrDisabled && (
+                  <span style={{ position: 'absolute', top: '5px', right: '5px', background: '#ef4444', color: 'white', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>DISABLED</span>
+                )}
               </div>
               <div style={{ textAlign: 'center', fontSize: '0.9rem' }}>
                 <strong>{qrCust.name}</strong>
-                <p style={{ margin: '4px 0 0 0', color: '#64748b' }}>Scan this QR code to automatically log in to the Customer Portal.</p>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b' }}>
+                  {qrCust.qrDisabled 
+                    ? 'This QR is currently disabled. Scan will show access error.' 
+                    : 'Scan this QR code to automatically log in to the Customer Portal.'}
+                </p>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', width: '100%', marginTop: '8px' }}>
-                <button onClick={() => handleShareQR(qrCust)} style={{ flex: 1, padding: '10px', background: '#25d366', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Share to WhatsApp</button>
-                <button onClick={() => { navigator.clipboard.writeText(`http://localhost:5173/customer?login=${qrCust.id}`); alert('Link copied to clipboard!'); }} style={{ padding: '10px', background: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>🔗 Copy</button>
-              </div>
+              {!qrCust.qrDisabled ? (
+                <>
+                  <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+                    <button onClick={() => handleShareQR(qrCust)} style={{ flex: 1, padding: '10px', background: '#25d366', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Share via WhatsApp</button>
+                    <button onClick={() => { navigator.clipboard.writeText(`http://localhost:5173/customer?login=${qrCust.id}`); alert('Link copied to clipboard!'); }} style={{ padding: '10px', background: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>🔗 Copy Link</button>
+                  </div>
+                  <button onClick={() => handleDisableQR(qrCust)} style={{ width: '100%', padding: '10px', background: '#fef2f2', color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>🚨 Disable Lost QR</button>
+                </>
+              ) : (
+                <button onClick={() => handleGenerateNewSecureQR(qrCust)} style={{ width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer' }}>🔑 Generate New Secure QR</button>
+              )}
             </div>
           </div>
         </div>
