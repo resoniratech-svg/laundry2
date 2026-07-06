@@ -497,7 +497,12 @@ export const CustomerPortal: React.FC = () => {
                   }}
                   style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer' }}
                 >
-                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: '700' }}>{srv.name}</h4>
+                  {srv.image ? (
+                    <img src={srv.image} alt={srv.name} style={{ width: '100%', height: '130px', objectFit: 'cover', borderRadius: '8px' }} />
+                  ) : (
+                    <div style={{ width: '100%', height: '130px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem' }}>🧺</div>
+                  )}
+                  <h4 style={{ margin: '8px 0 0 0', fontSize: '1rem', fontWeight: '700' }}>{srv.name}</h4>
                   <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', width: 'fit-content' }}>{srv.category}</span>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '12px', marginTop: '10px' }}>
                     <div>
