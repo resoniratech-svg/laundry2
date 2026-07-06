@@ -127,6 +127,7 @@ export const AdminPortal: React.FC = () => {
   const [sName, setSName] = useState('');
   const [sCategory, setSCategory] = useState('Wash & Fold');
   const [sPrice, setSPrice] = useState('');
+  const [sImage, setSImage] = useState('');
 
   // Wallet / Loyalty adjustments
   const [walletCust, setWalletCust] = useState<Customer | null>(null);
@@ -405,7 +406,7 @@ export const AdminPortal: React.FC = () => {
   const handleSaveService = (e: React.FormEvent) => {
     e.preventDefault();
     if (editingService) {
-      const updated = db.services.map(s => s.id === editingService.id ? { ...s, name: sName, category: sCategory, price: parseFloat(sPrice) || 0 } : s);
+      const updated = db.services.map(s => s.id === editingService.id ? { ...s, name: sName, category: sCategory, price: parseFloat(sPrice) || 0, image: sImage || undefined } : s);
       saveDB({ services: updated });
       addActivity('Settings', `Edited catalog service: ${sName}`);
       setEditingService(null);
@@ -415,7 +416,9 @@ export const AdminPortal: React.FC = () => {
         name: sName,
         category: sCategory,
         price: parseFloat(sPrice) || 0,
-        description: 'Quality cleaning options'
+        expressSurcharge: 1.5,
+        active: true,
+        image: sImage || undefined
       };
       saveDB({ services: [...db.services, newServ] });
       addActivity('Settings', `Added catalog service: ${sName}`);
@@ -423,6 +426,7 @@ export const AdminPortal: React.FC = () => {
     }
     setSName('');
     setSPrice('');
+    setSImage('');
   };
 
   const handleDeleteService = (id: string) => {
@@ -1038,12 +1042,19 @@ export const AdminPortal: React.FC = () => {
               <tbody>
                 {db.services.map(s => (
                   <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontWeight: '700' }}>{s.name}</td>
+                    <td style={{ padding: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      {s.image ? (
+                        <img src={s.image} alt={s.name} style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover', border: '1px solid #cbd5e1' }} />
+                      ) : (
+                        <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🧺</div>
+                      )}
+                      <span>{s.name}</span>
+                    </td>
                     <td style={{ padding: '12px' }}>{s.category}</td>
                     <td style={{ padding: '12px', fontWeight: '700', color: '#2563eb' }}>QR {s.price.toFixed(2)}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button onClick={() => { setEditingService(s); setSName(s.name); setSCategory(s.category); setSPrice(s.price.toString()); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✏️ Edit</button>
+                        <button onClick={() => { setEditingService(s); setSName(s.name); setSCategory(s.category); setSPrice(s.price.toString()); setSImage(s.image || ''); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✏️ Edit</button>
                         <button onClick={() => handleDeleteService(s.id)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>🗑️ Delete</button>
                       </div>
                     </td>
@@ -2173,6 +2184,11 @@ export const AdminPortal: React.FC = () => {
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Price (QR)</label>
                   <input type="number" required value={sPrice} onChange={e => setSPrice(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
                 </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Service Image URL</label>
+                <input type="text" value={sImage} onChange={e => setSImage(e.target.value)} placeholder="https://images.unsplash.com/photo-..." style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
               </div>
 
               <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
