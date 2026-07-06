@@ -85,6 +85,11 @@ export interface User {
   status?: string;
   createdAt?: string;
   age?: number;
+  profilePhoto?: string;
+  vehicleType?: string;
+  vehicleNumber?: string;
+  licenseNumber?: string;
+  vehicleRc?: string;
 }
 
 export interface Company {

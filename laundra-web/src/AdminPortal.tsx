@@ -100,6 +100,11 @@ export const AdminPortal: React.FC = () => {
   const [staffAddress, setStaffAddress] = useState('');
   const [staffPass, setStaffPass] = useState('');
   const [staffOtp, setStaffOtp] = useState('');
+  const [staffProfilePhoto, setStaffProfilePhoto] = useState('');
+  const [staffVehicleType, setStaffVehicleType] = useState('Bike');
+  const [staffVehicleNumber, setStaffVehicleNumber] = useState('');
+  const [staffLicenseNumber, setStaffLicenseNumber] = useState('');
+  const [staffVehicleRc, setStaffVehicleRc] = useState('');
 
   const [viewingStaff, setViewingStaff] = useState<User | null>(null);
 
@@ -336,7 +341,12 @@ export const AdminPortal: React.FC = () => {
       phone: staffPhone,
       address: staffAddress,
       status: 'Active',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      profilePhoto: role === 'delivery' ? staffProfilePhoto : undefined,
+      vehicleType: role === 'delivery' ? staffVehicleType : undefined,
+      vehicleNumber: role === 'delivery' ? staffVehicleNumber : undefined,
+      licenseNumber: role === 'delivery' ? staffLicenseNumber : undefined,
+      vehicleRc: role === 'delivery' ? staffVehicleRc : undefined
     };
 
     saveDB({ users: [...db.users, newUser] });
@@ -350,6 +360,11 @@ export const AdminPortal: React.FC = () => {
     setStaffAddress('');
     setStaffPass('');
     setStaffOtp('');
+    setStaffProfilePhoto('');
+    setStaffVehicleType('Bike');
+    setStaffVehicleNumber('');
+    setStaffLicenseNumber('');
+    setStaffVehicleRc('');
     setAddingCashierStep(0);
     setAddingDeliveryStep(0);
   };
@@ -1862,27 +1877,58 @@ export const AdminPortal: React.FC = () => {
       {/* CREATE DELIVERY STAFF MODAL (OTP FLOW) */}
       {addingDeliveryStep > 0 && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '500px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
             <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
               <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Create Delivery Staff (Step {addingDeliveryStep}/3)</h3>
               <button onClick={() => setAddingDeliveryStep(0)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
             </div>
 
             {addingDeliveryStep === 1 && (
-              <form onSubmit={e => handleCreateStaffInputs(e, 'delivery')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <form onSubmit={e => handleCreateStaffInputs(e, 'delivery')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '480px', overflowY: 'auto' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Full Name *</label>
-                  <input type="text" required value={staffName} onChange={e => setStaffName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                  <input type="text" required value={staffName} onChange={e => setStaffName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Email Address *</label>
-                  <input type="email" required value={staffEmail} onChange={e => setStaffEmail(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                  <input type="email" required value={staffEmail} onChange={e => setStaffEmail(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
                 </div>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Phone</label>
-                  <input type="text" value={staffPhone} onChange={e => setStaffPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                  <input type="text" value={staffPhone} onChange={e => setStaffPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
                 </div>
-                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Next: Send OTP</button>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Profile Photo URL</label>
+                  <input type="text" value={staffProfilePhoto} onChange={e => setStaffProfilePhoto(e.target.value)} placeholder="https://example.com/photo.jpg" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Vehicle Type</label>
+                    <select value={staffVehicleType} onChange={e => setStaffVehicleType(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }}>
+                      <option value="Bike">Bike</option>
+                      <option value="Scooter">Scooter</option>
+                      <option value="Car">Car</option>
+                      <option value="Van">Van</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Vehicle Number</label>
+                    <input type="text" value={staffVehicleNumber} onChange={e => setStaffVehicleNumber(e.target.value)} placeholder="KA-01-AB-1234" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>License Number</label>
+                  <input type="text" value={staffLicenseNumber} onChange={e => setStaffLicenseNumber(e.target.value)} placeholder="DL-0420110012345" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Vehicle RC</label>
+                  <input type="text" value={staffVehicleRc} onChange={e => setStaffVehicleRc(e.target.value)} placeholder="KA01AB1234RC" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Address</label>
+                  <input type="text" value={staffAddress} onChange={e => setStaffAddress(e.target.value)} placeholder="456 Delivery Lane, Bangalore" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px', width: '100%' }}>Next: Send OTP</button>
               </form>
             )}
 
