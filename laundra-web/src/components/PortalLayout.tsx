@@ -45,94 +45,113 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
   };
 
   // Sidebar brand name based on role
-  const brandName = role === 'Admin' ? 'Manager Desk' : role === 'Delivery Boy' ? 'Delivery Portal' : `${role} Desk`;
+  const brandName = role === 'Admin' ? 'Manager Desk' : role === 'Delivery Staff' ? 'Delivery Portal' : `${role} Desk`;
 
-  // Filter allowed modules
+  // Get active company context for feature checking
+  const activeComp = db.companies.find(c => c.id === db.activeCompanyId);
+
+  // Filter allowed modules based on Super Admin flags
   const isAllowed = (moduleId: string) => {
-    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
-    if (activeCompany && activeCompany.features) {
-      if (moduleId === 'express-wash' && !activeCompany.features.expressWash) {
-        return false;
-      }
-      if (moduleId === 'delivery-status' && !activeCompany.features.deliveryOperations) {
-        return false;
-      }
-    }
+    if (!activeComp) return true;
 
-    if (role === 'Delivery Boy') {
-      if (activeCompany && activeCompany.features && !activeCompany.features.deliveryOperations) {
-        return false;
-      }
-      return ['pending-orders', 'your-orders'].includes(moduleId);
-    }
-    if (['pending-orders', 'your-orders'].includes(moduleId)) {
-      return false;
+    // Feature toggles
+    if (moduleId === 'cashiers' && activeComp.features?.cashierModule === false) return false;
+    if (moduleId === 'delivery-staff' && activeComp.features?.deliveryModule === false) return false;
+    if (moduleId === 'expenses' && activeComp.features?.expenseModule === false) return false;
+    if (moduleId === 'reports' && activeComp.features?.reports === false) return false;
+    if (moduleId === 'coupons' && activeComp.features?.coupons === false) return false;
+    if (moduleId === 'wallet-loyalty' && activeComp.features?.wallet === false && activeComp.features?.loyaltyProgram === false) return false;
+
+    // Role-based restrictions
+    if (role === 'Delivery Staff' || role === 'Delivery Boy') {
+      return ['orders'].includes(moduleId);
     }
     if (role === 'Cashier') {
-      return !['user-management', 'services'].includes(moduleId);
+      return ['dashboard', 'customers', 'orders', 'payments', 'wallet-loyalty'].includes(moduleId);
     }
-    return true; // Admin has full access to everything else
-  };
 
-  // Sub-tab permissions for operations header (hidden in css but implemented)
-  const isTabAllowed = (tabId: string) => {
-    if (role === 'Delivery Boy') {
-      return tabId === 'delivery';
-    }
-    return tabId !== 'delivery';
+    return true;
   };
 
   const titleMap: Record<string, string> = {
-    'sales-overview': 'Sales Overview',
-    'pos': 'Manual Order',
-    'manual-orders-list': 'Manual Order List',
-    'daily-orders': 'Daily Orders',
-    'express-wash': 'Express Wash',
-    'pending-orders': 'Pending Orders',
-    'your-orders': 'Your Orders',
-    'delivery-status': 'Delivery Status',
-    'revenue-analytics': 'Revenue Analytics',
-    'user-management': 'User Management',
-    'customer-crm': 'Customer CRM',
-    'expense-daybook': 'Expense Daybook',
-    'customer-users': 'Customer Users',
-    'monthly-orders': 'Monthly Orders',
-    'services': 'Services Catalog'
+    'dashboard': 'Admin Dashboard',
+    'customers': 'Customer Management',
+    'cashiers': 'Cashier Management',
+    'delivery-staff': 'Delivery Staff Management',
+    'services': 'Service Management',
+    'orders': 'Order Management',
+    'payments': 'Payments Catalog',
+    'coupons': 'Coupons Management',
+    'wallet-loyalty': 'Wallet & Loyalty Program',
+    'expenses': 'Expenses Manager',
+    'reports': 'Business Reports',
+    'notifications': 'Central Notifications Center',
+    'reviews': 'Customer Reviews',
+    'settings': 'Company Settings',
+    'audit-logs': 'Audit Activity Logs',
+    'support': 'Platform Help & Support'
   };
 
   const currentTitle = titleMap[activeModule] || 'Manager Desk';
-  const prefix = role === 'Delivery Boy' ? 'Delivery Portal' : 'Manager Desk';
+
+  // Sidebar tabs list matching exactly the required workflow
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+    { id: 'customers', label: 'Customer Management', icon: '👥' },
+    { id: 'cashiers', label: 'Cashier Management', icon: '💳' },
+    { id: 'delivery-staff', label: 'Delivery Staff', icon: '🚚' },
+    { id: 'services', label: 'Service Management', icon: '🏷️' },
+    { id: 'orders', label: 'Order Management', icon: '🧺' },
+    { id: 'payments', label: 'Payments & Refunds', icon: '💰' },
+    { id: 'coupons', label: 'Coupons Manager', icon: '🎁' },
+    { id: 'wallet-loyalty', label: 'Wallet & Loyalty', icon: '💳' },
+    { id: 'expenses', label: 'Expenses Book', icon: '💸' },
+    { id: 'reports', label: 'Business Reports', icon: '📊' },
+    { id: 'notifications', label: 'Notification Center', icon: '✉️' },
+    { id: 'reviews', label: 'Customer Reviews', icon: '⭐' },
+    { id: 'settings', label: 'Company Settings', icon: '⚙️' },
+    { id: 'audit-logs', label: 'Audit Activity Logs', icon: '📜' },
+    { id: 'support', label: 'Help & Support', icon: '🎫' }
+  ];
 
   return (
-    <div className="workspace-wrapper active" id="workspacePanel">
+    <div className="workspace-wrapper active" id="workspacePanel" style={{ background: '#f8fafc' }}>
       
-      {/* Top Workspace Header (Includes branch selector, role select, notifications, sub-tab nav) */}
+      {/* Top Workspace Header */}
       <div className="workspace-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', borderBottom: '1px solid var(--border-color)', paddingBottom: '16px', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Operational Desk</h2>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e3a8a', fontWeight: '800' }}>Operational Desk</h2>
           
           {/* Branch Selector */}
           <select 
             value={db.activeBranch} 
             onChange={(e) => saveDB({ activeBranch: e.target.value })}
             className="header-select-btn" 
-            style={{ height: '36px', padding: '0 12px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}
+            style={{ height: '36px', padding: '0 12px', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}
           >
             <option value="Downtown HQ">Downtown HQ (Branch A)</option>
             <option value="Uptown Premium">Uptown Premium (Branch B)</option>
             <option value="Metro Express">Metro Express (Branch C)</option>
           </select>
 
-          {/* Role Selector */}
+          {/* Role Selector (Demo switcher) */}
           <select 
             value={db.activeRole} 
-            onChange={(e) => saveDB({ activeRole: e.target.value })}
+            onChange={(e) => {
+              const r = e.target.value;
+              saveDB({ activeRole: r });
+              if (r === 'Delivery Staff' || r === 'Delivery Boy') {
+                onModuleChange('orders');
+              } else {
+                onModuleChange('dashboard');
+              }
+            }}
             className="header-select-btn" 
-            style={{ height: '36px', padding: '0 12px', fontSize: '0.8rem', fontWeight: '600', cursor: 'pointer', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}
+            style={{ height: '36px', padding: '0 12px', fontSize: '0.8rem', fontWeight: '700', cursor: 'pointer', background: 'white', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}
           >
             <option value="Admin">Admin</option>
             <option value="Cashier">Cashier</option>
-            <option value="Delivery Boy">Delivery Staff</option>
+            <option value="Delivery Staff">Delivery Staff</option>
           </select>
 
           {/* Notification Bell */}
@@ -178,127 +197,57 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
           </button>
         </div>
 
-        <div className="cta-row" style={{ margin: 0 }}>
-          {isTabAllowed('customer') && <button onClick={() => navigate('/customer')} className="secondary-btn sub-tab-nav">Customer Hub</button>}
-          {isTabAllowed('delivery') && (db.companies.find(c => c.id === db.activeCompanyId)?.features?.deliveryOperations !== false) && <button onClick={() => onModuleChange('pending-orders')} className="secondary-btn sub-tab-nav">Delivery Hub</button>}
-          <button onClick={() => navigate('/')} className="primary-btn">Home</button>
+        <div className="cta-row" style={{ margin: 0, display: 'flex', gap: '8px' }}>
+          <button onClick={() => navigate('/customer')} className="secondary-btn sub-tab-nav" style={{ fontWeight: '700' }}>Customer Hub</button>
+          {activeComp?.features?.deliveryModule !== false && (
+            <button onClick={() => { saveDB({ activeRole: 'Delivery Staff' }); onModuleChange('orders'); }} className="secondary-btn sub-tab-nav" style={{ fontWeight: '700' }}>Delivery Hub</button>
+          )}
+          <button onClick={() => navigate('/')} className="primary-btn" style={{ fontWeight: '700' }}>Home</button>
         </div>
       </div>
-      <div className="admin-layout-container">
+
+      <div className="admin-layout-container" style={{ display: 'flex', gap: '24px', alignItems: 'stretch' }}>
         
         {/* Sidebar Panel */}
-        <aside className="admin-sidebar">
-          <div className="sidebar-brand">
-            <span style={{ fontSize: '1.2rem', fontWeight: '800', color: 'var(--primary)' }}>{brandName}</span>
+        <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRadius: '16px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0 }}>
+          <div className="sidebar-brand" style={{ padding: '0 20px 16px', borderBottom: '1px solid #f1f5f9', marginBottom: '16px' }}>
+            <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e3a8a' }}>{brandName}</span>
           </div>
 
-
-          <div className="sidebar-menu-wrapper">
-            <ul className="sidebar-menu">
-              {isAllowed('sales-overview') && (
-                <li 
-                  onClick={() => onModuleChange('sales-overview')} 
-                  className={`sidebar-menu-item ${activeModule === 'sales-overview' ? 'active' : ''}`}
-                >
-                  📊 <span>Sales Overview</span>
-                </li>
-              )}
-              {isAllowed('pos') && (
-                <li 
-                  onClick={() => onModuleChange('pos')} 
-                  className={`sidebar-menu-item ${activeModule === 'pos' ? 'active' : ''}`}
-                >
-                  ➕ <span>Manual Order</span>
-                </li>
-              )}
-              {isAllowed('manual-orders-list') && (
-                <li 
-                  onClick={() => onModuleChange('manual-orders-list')} 
-                  className={`sidebar-menu-item ${activeModule === 'manual-orders-list' ? 'active' : ''}`}
-                >
-                  📋 <span>Manual Order List</span>
-                </li>
-              )}
-              {isAllowed('daily-orders') && (
-                <li 
-                  onClick={() => onModuleChange('daily-orders')} 
-                  className={`sidebar-menu-item ${activeModule === 'daily-orders' ? 'active' : ''}`}
-                >
-                  📝 <span>Daily Orders</span>
-                </li>
-              )}
-              {isAllowed('express-wash') && (
-                <li 
-                  onClick={() => onModuleChange('express-wash')} 
-                  className={`sidebar-menu-item ${activeModule === 'express-wash' ? 'active' : ''}`}
-                >
-                  ⚡ <span>Express Wash</span>
-                </li>
-              )}
-              {isAllowed('monthly-orders') && (
-                <li 
-                  onClick={() => onModuleChange('monthly-orders')} 
-                  className={`sidebar-menu-item ${activeModule === 'monthly-orders' ? 'active' : ''}`}
-                >
-                  📆 <span>Monthly Orders</span>
-                </li>
-              )}
-              {isAllowed('pending-orders') && (
-                <li 
-                  onClick={() => onModuleChange('pending-orders')} 
-                  className={`sidebar-menu-item ${activeModule === 'pending-orders' ? 'active' : ''}`}
-                >
-                  🕒 <span>Pending Orders</span>
-                </li>
-              )}
-              {isAllowed('your-orders') && (
-                <li 
-                  onClick={() => onModuleChange('your-orders')} 
-                  className={`sidebar-menu-item ${activeModule === 'your-orders' ? 'active' : ''}`}
-                >
-                  📦 <span>Your Orders</span>
-                </li>
-              )}
-              {isAllowed('delivery-status') && (
-                <li 
-                  onClick={() => onModuleChange('delivery-status')} 
-                  className={`sidebar-menu-item ${activeModule === 'delivery-status' ? 'active' : ''}`}
-                >
-                  🚚 <span>Delivery Status</span>
-                </li>
-              )}
-              {isAllowed('services') && (
-                <li 
-                  onClick={() => onModuleChange('services')} 
-                  className={`sidebar-menu-item ${activeModule === 'services' ? 'active' : ''}`}
-                >
-                  🏷️ <span>Services Catalog</span>
-                </li>
-              )}
-              {isAllowed('customer-users') && (
-                <li 
-                  onClick={() => onModuleChange('customer-users')} 
-                  className={`sidebar-menu-item ${activeModule === 'customer-users' ? 'active' : ''}`}
-                >
-                  👥 <span>Customer Users</span>
-                </li>
-              )}
-              {isAllowed('user-management') && (
-                <li 
-                  onClick={() => onModuleChange('user-management')} 
-                  className={`sidebar-menu-item ${activeModule === 'user-management' ? 'active' : ''}`}
-                >
-                  👤 <span>User Management</span>
-                </li>
-              )}
+          <div className="sidebar-menu-wrapper" style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
+            <ul className="sidebar-menu" style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              {menuItems
+                .filter(item => isAllowed(item.id))
+                .map(item => (
+                  <li 
+                    key={item.id}
+                    onClick={() => onModuleChange(item.id)} 
+                    className={`sidebar-menu-item ${activeModule === item.id ? 'active' : ''}`}
+                    style={{
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      cursor: 'pointer',
+                      fontSize: '0.85rem',
+                      fontWeight: '700',
+                      color: activeModule === item.id ? '#2563eb' : '#475569',
+                      background: activeModule === item.id ? '#eff6ff' : 'transparent',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    <span>{item.icon}</span> <span>{item.label}</span>
+                  </li>
+                ))}
             </ul>
           </div>
 
-          <div style={{ marginTop: 'auto', padding: '16px', borderTop: '1px solid var(--border-color)', flexShrink: 0 }}>
+          <div style={{ padding: '16px 20px 0', borderTop: '1px solid #f1f5f9', marginTop: '16px' }}>
             <button 
               onClick={handleSignOut} 
               className="secondary-btn" 
-              style={{ width: '100%', justifyContent: 'center', borderColor: '#ef4444', color: '#ef4444', height: '40px', fontWeight: '700' }}
+              style={{ width: '100%', justifyContent: 'center', borderColor: '#ef4444', color: '#ef4444', height: '40px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px', background: 'transparent', cursor: 'pointer', borderRadius: '8px' }}
             >
               🚪 Sign Out
             </button>
@@ -306,11 +255,11 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
         </aside>
 
         {/* Content View */}
-        <main className="admin-main-content">
-          <div className="admin-content-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-            <h2 id="adminActiveModuleTitle" style={{ margin: 0, fontSize: '1.5rem', fontWeight: '800' }}>{currentTitle}</h2>
-            <div className="breadcrumb" style={{ fontSize: '0.85rem', color: '#64748b' }}>
-              {prefix} / {currentTitle}
+        <main className="admin-main-content" style={{ flex: 1, background: 'white', borderRadius: '16px', border: '1px solid var(--border-color)', padding: '24px' }}>
+          <div className="admin-content-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid #f1f5f9', paddingBottom: '16px' }}>
+            <h2 id="adminActiveModuleTitle" style={{ margin: 0, fontSize: '1.35rem', fontWeight: '800', color: '#0f172a' }}>{currentTitle}</h2>
+            <div className="breadcrumb" style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: '600' }}>
+              Operational Desk / {currentTitle}
             </div>
           </div>
           {children}

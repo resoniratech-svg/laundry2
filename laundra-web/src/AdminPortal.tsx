@@ -1,73 +1,92 @@
 import React, { useState, useEffect } from 'react';
-import { useDatabase, type Order, type Service, type Customer, type User, type Expense } from './DatabaseContext';
+import { useNavigate } from 'react-router-dom';
+import { useDatabase, type Order, type Service, type Customer, type User, type Expense, type Promo } from './DatabaseContext';
 import { PortalLayout } from './components/PortalLayout';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-} from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+// ─── Interfaces ─────────────────────────────────────────────────────────────
+interface CompanyActivity {
+  id: string;
+  category: 'Customer' | 'Cashier' | 'Delivery' | 'Order' | 'Payment' | 'Settings' | 'Auth';
+  description: string;
+  date: string;
+  userEmail: string;
+}
+
+interface SupportTicket {
+  id: string;
+  company: string;
+  subject: string;
+  status: 'Open' | 'Closed';
+  date: string;
+  message: string;
+  assignedTo?: string;
+  history?: { sender: string; message: string; date: string }[];
+}
 
 export const AdminPortal: React.FC = () => {
+  const navigate = useNavigate();
   const { db, saveDB } = useDatabase();
 
-  // Active Module tab state
+  // Active module tab state
   const [activeModule, setActiveModule] = useState<string>(() => {
-    return localStorage.getItem('ll_active_admin_module') || 'sales-overview';
+    return localStorage.getItem('ll_active_admin_module') || 'dashboard';
   });
 
   useEffect(() => {
     localStorage.setItem('ll_active_admin_module', activeModule);
   }, [activeModule]);
 
-  // Adjust module tab based on role permissions on load
+  // Adjust module tab based on role permissions
   useEffect(() => {
-    if (db.activeRole === 'Delivery Boy') {
-      const allowed = ['pending-orders', 'your-orders'];
-      if (!allowed.includes(activeModule)) {
-        setActiveModule('pending-orders');
+    if (db.activeRole === 'Delivery Staff' || db.activeRole === 'Delivery Boy') {
+      if (activeModule !== 'orders') {
+        setActiveModule('orders');
       }
     }
   }, [db.activeRole]);
 
-  // General Modal States
+  // ─── States ────────────────────────────────────────────────────────────────
+  // Company Activity Logs
+  const [activities, setActivities] = useState<CompanyActivity[]>(() => {
+    try { return JSON.parse(localStorage.getItem(`ll_${db.activeCompanyId}_activities`) || '[]'); } catch { return []; }
+  });
+
+  // Support Tickets
+  const [supportTickets, setSupportTickets] = useState<SupportTicket[]>(() => {
+    try {
+      const all = JSON.parse(localStorage.getItem('ll_platform_tickets') || '[]');
+      return all.filter((t: any) => t.company === db.companies.find(c => c.id === db.activeCompanyId)?.name);
+    } catch {
+      return [];
+    }
+  });
+
+  // Local state for modals & details
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [addingUser, setAddingUser] = useState(false);
+  const [viewingCustomer, setViewingCustomer] = useState<Customer | null>(null);
+  const [addingCustomerStep, setAddingCustomerStep] = useState<number>(0); // 0 = Idle, 1 = Inputs, 2 = OTP, 3 = Password setup
+  const [addingCashierStep, setAddingCashierStep] = useState<number>(0);   // OTP flow for Cashier
+  const [addingDeliveryStep, setAddingDeliveryStep] = useState<number>(0); // OTP flow for Delivery
   
-  // Service Catalog Modals
-  const [addingService, setAddingService] = useState(false);
-  const [editingService, setEditingService] = useState<Service | null>(null);
+  // Form inputs
+  const [custName, setCustName] = useState('');
+  const [custEmail, setCustEmail] = useState('');
+  const [custPhone, setCustPhone] = useState('');
+  const [custAddress, setCustAddress] = useState('');
+  const [custPass, setCustPass] = useState('');
+  const [custOtp, setCustOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
 
-  // Expense Modals
-  const [addingExpense, setAddingExpense] = useState(false);
+  const [staffName, setStaffName] = useState('');
+  const [staffEmail, setStaffEmail] = useState('');
+  const [staffPhone, setStaffPhone] = useState('');
+  const [staffAddress, setStaffAddress] = useState('');
+  const [staffPass, setStaffPass] = useState('');
+  const [staffOtp, setStaffOtp] = useState('');
 
-  // CRM Modals
-  const [adjustingWalletCust, setAdjustingWalletCust] = useState<Customer | null>(null);
+  const [viewingStaff, setViewingStaff] = useState<User | null>(null);
 
-  // POS State
-  const [posCategory, setPosCategory] = useState('All');
-  const [posSearch, setPosSearch] = useState('');
-  const [posExpress, setPosExpress] = useState(false);
+  // Manual orders / POS
   const [posCart, setPosCart] = useState<{ service: Service; qty: number; express: boolean }[]>([]);
   const [posCustId, setPosCustId] = useState('');
   const [posCustName, setPosCustName] = useState('');
@@ -75,289 +94,338 @@ export const AdminPortal: React.FC = () => {
   const [posCustAddress, setPosCustAddress] = useState('');
   const [posCustEmail, setPosCustEmail] = useState('');
   const [posPayMethod, setPosPayMethod] = useState<'Cash' | 'Card' | 'UPI' | 'Wallet'>('Cash');
-  const [activeReceipt, setActiveReceipt] = useState<Order | null>(null);
+  const [posSearch, setPosSearch] = useState('');
+  const [posCategory, setPosCategory] = useState('All');
+  const [posExpress, setPosExpress] = useState(false);
 
-  // Users Management form inputs
-  const [uName, setUName] = useState('');
-  const [uRole, setURole] = useState<'admin' | 'delivery' | 'customer'>('delivery');
-  const [uEmail, setUEmail] = useState('');
-  const [uPhone, setUPhone] = useState('');
-  const [uAddress, setUAddress] = useState('');
-  const [uPassword, setUPassword] = useState('');
-
-  // Service form inputs
+  // Service Forms
+  const [addingService, setAddingService] = useState(false);
+  const [editingService, setEditingService] = useState<Service | null>(null);
   const [sName, setSName] = useState('');
   const [sCategory, setSCategory] = useState('Wash & Fold');
   const [sPrice, setSPrice] = useState('');
-  const [sSurcharge, setSSurcharge] = useState('50');
 
-  // Expense form inputs
-  const [eCategory, setECategory] = useState('Chemicals & Detergents');
-  const [eDesc, setEDesc] = useState('');
-  const [eSource, setESource] = useState('Drawer Cash');
-  const [eAmount, setEAmount] = useState('');
-
-  // Wallet adjustment inputs
+  // Wallet / Loyalty adjustments
+  const [walletCust, setWalletCust] = useState<Customer | null>(null);
   const [walletAmt, setWalletAmt] = useState('');
   const [walletDir, setWalletDir] = useState<'in' | 'out'>('in');
+  const [loyaltyCust, setLoyaltyCust] = useState<Customer | null>(null);
+  const [loyaltyPts, setLoyaltyPts] = useState('');
+  const [loyaltyDir, setLoyaltyDir] = useState<'add' | 'redeem'>('add');
 
-  const [ordersSearch, setOrdersSearch] = useState('');
-  const ordersBranchFilter = 'All';
+  // Coupon Forms
+  const [addingCoupon, setAddingCoupon] = useState(false);
+  const [editingCoupon, setEditingCoupon] = useState<Promo | null>(null);
+  const [cpCode, setCpCode] = useState('');
+  const [cpType, setCpType] = useState<'Percentage' | 'Flat'>('Percentage');
+  const [cpValue, setCpValue] = useState('');
+  const [cpDesc, setCpDesc] = useState('');
 
-  // KPI calculations
-  const dailyOrders = db.orders.filter(o => o.frequency !== 'Monthly');
-  const dailyCount = dailyOrders.length;
-  const dailyRevenue = dailyOrders.reduce((acc, curr) => acc + (curr.totalAmount || curr.total || 0), 0);
+  // Expense Forms
+  const [addingExpense, setAddingExpense] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [expCategory, setExpCategory] = useState('Salary');
+  const [expDesc, setExpDesc] = useState('');
+  const [expSource, setExpSource] = useState('Drawer Cash');
+  const [expAmount, setExpAmount] = useState('');
 
-  const monthlyOrders = db.orders.filter(o => o.frequency === 'Monthly');
-  const monthlyCount = monthlyOrders.length;
-  const monthlyRevenue = monthlyOrders.reduce((acc, curr) => acc + (curr.totalAmount || curr.total || 0), 0);
+  // Support ticket Forms
+  const [tktSubject, setTktSubject] = useState('');
+  const [tktMessage, setTktMessage] = useState('');
 
-  const getServicePrice = (srv: Service | null, plan: 'normal' | 'express') => {
-    if (!srv) return 0;
-    let base = srv.price;
-    if (plan === 'express') {
-      base = base * 1.5;
-    }
-    return base;
+  // Central Notification Alerts sender
+  const [alertTarget, setAlertTarget] = useState('');
+  const [alertText, setAlertText] = useState('');
+  const [alertChannel, setAlertChannel] = useState<'Email' | 'SMS' | 'Push' | 'WhatsApp'>('Email');
+  const [notificationsLog, setNotificationsLog] = useState<{ id: string; target: string; channel: string; text: string; time: string }[]>([]);
+
+  // Reviews
+  const [reviews, setReviews] = useState<{ id: string; name: string; stars: number; comment: string; reply?: string; hidden?: boolean }[]>([
+    { id: 'rev-1', name: 'Al Pacino', stars: 5, comment: 'Excellent laundry service. Pressed perfectly.' },
+    { id: 'rev-2', name: 'Robert De Niro', stars: 4, comment: 'Quick delivery but wash could be cleaner.' }
+  ]);
+  const [replyText, setReplyText] = useState('');
+  const [activeReviewId, setActiveReviewId] = useState('');
+
+  // QR Modal
+  const [qrCust, setQrCust] = useState<Customer | null>(null);
+
+  // Search & Filter
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState('All');
+  const [custSearch, setCustSearch] = useState('');
+
+  // Get active company configurations
+  const activeComp = db.companies.find(c => c.id === db.activeCompanyId)!;
+  const limits = activeComp.limits || { maxAdmins: 3, maxCashiers: 5, maxDeliveryStaff: 10, maxCustomers: 5000, maxOrdersPerMonth: 2000 };
+
+  // Sync activities
+  useEffect(() => {
+    localStorage.setItem(`ll_${db.activeCompanyId}_activities`, JSON.stringify(activities));
+  }, [activities, db.activeCompanyId]);
+
+  const addActivity = (category: CompanyActivity['category'], description: string) => {
+    const newAct: CompanyActivity = {
+      id: 'act-' + Date.now(),
+      category,
+      description,
+      date: new Date().toLocaleString(),
+      userEmail: activeComp.adminEmail
+    };
+    setActivities(prev => [newAct, ...prev]);
   };
 
-  // --- ACTIONS ---
+  // ─── HANDLERS ──────────────────────────────────────────────────────────────
 
-  // Order Details Status update
-  const handleUpdateOrderStatus = (orderId: string, nextStatus: any, nextDeliveryStatus: string) => {
-    const updated = db.orders.map(o => {
-      if (o.id === orderId) {
-        return { ...o, status: nextStatus, deliveryStatus: nextDeliveryStatus };
-      }
-      return o;
-    });
-    saveDB({ orders: updated });
-    if (viewingOrder && viewingOrder.id === orderId) {
-      setViewingOrder({ ...viewingOrder, status: nextStatus, deliveryStatus: nextDeliveryStatus });
-    }
-  };
-
-  const handleUpdateOrderCourier = (orderId: string, courierName: string) => {
-    const updated = db.orders.map(o => {
-      if (o.id === orderId) {
-        return { 
-          ...o, 
-          courier: courierName, 
-          deliveryStatus: courierName === 'All' ? 'Available to All Couriers' : (courierName ? 'Assigned to Courier' : 'Pending Assignment') 
-        };
-      }
-      return o;
-    });
-    saveDB({ orders: updated });
-    if (viewingOrder && viewingOrder.id === orderId) {
-      setViewingOrder({ 
-        ...viewingOrder, 
-        courier: courierName, 
-        deliveryStatus: courierName === 'All' ? 'Available to All Couriers' : (courierName ? 'Assigned to Courier' : 'Pending Assignment') 
-      });
-    }
-  };
-
-  const handleAcceptOrder = (order: Order) => {
-    const courier = db.currentDeliveryBoy || 'John Doe';
-    const updated = db.orders.map(o => {
-      if (o.id === order.id) {
-        return {
-          ...o,
-          courier: courier,
-          status: o.status === 'Ready' ? 'Ready' as const : 'Accepted' as const,
-          deliveryStatus: o.status === 'Ready' ? 'Assigned for Delivery' : 'Accepted by Courier'
-        };
-      }
-      return o;
-    });
-    saveDB({ orders: updated });
-    // Redirect to Your Orders
-    setActiveModule('your-orders');
-  };
-
-  const handleDeleteOrder = (orderId: string) => {
-    if (window.confirm('Delete order #' + orderId + '?')) {
-      const updated = db.orders.filter(o => o.id !== orderId);
-      saveDB({ orders: updated });
-      setViewingOrder(null);
-    }
-  };
-
-  // User Management actions
-  const handleCreateUser = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
-    const limits = activeCompany?.limits || { maxAdmins: 3, maxCashiers: 5, maxDeliveryStaff: 10 };
+  // Central Centralized Notification verification simulation
+  const sendCentralOtp = (target: string, type: string) => {
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(otp);
     
-    const currentAdmins = db.users.filter(u => u.role === 'admin').length;
-    const currentCashiers = db.users.filter(u => u.role === 'cashier').length;
-    const currentDelivery = db.users.filter(u => u.role === 'delivery').length;
+    // Append to platform global OTP logs
+    try {
+      const allLogs = JSON.parse(localStorage.getItem('ll_otp_logs') || '[]');
+      const newLog = {
+        id: 'otp-' + Date.now(),
+        target,
+        otp,
+        type,
+        time: new Date().toLocaleTimeString(),
+        status: 'Pending'
+      };
+      localStorage.setItem('ll_otp_logs', JSON.stringify([newLog, ...allLogs]));
+    } catch (e) {
+      console.error(e);
+    }
 
-    if (uRole === 'admin' && currentAdmins >= (limits.maxAdmins || 3)) {
-      alert(`Resource Limit Reached: Maximum allowed Company Admins is ${limits.maxAdmins || 3}. Contact Platform Super Admin to upgrade.`);
+    alert(`[Centralized Notification Service Alert]\nCentral OTP code generated for ${target}: ${otp}\nType: ${type}`);
+  };
+
+  // Customer wizard actions
+  const handleStartAddCustomer = () => {
+    if (db.customers.length >= (limits.maxCustomers || 5000)) {
+      alert(`User Limit Reached: Maximum allowed Customers is ${limits.maxCustomers || 5000}. Contact SaaS Super Admin to upgrade.`);
       return;
     }
-    if (uRole === 'cashier' && currentCashiers >= (limits.maxCashiers || 5)) {
-      alert(`Resource Limit Reached: Maximum allowed Cashiers is ${limits.maxCashiers || 5}. Contact Platform Super Admin to upgrade.`);
-      return;
+    setAddingCustomerStep(1);
+  };
+
+  const handleCreateCustomerInputs = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddingCustomerStep(2);
+    sendCentralOtp(custEmail, 'Customer Email Verification');
+  };
+
+  const handleVerifyCustomerOtp = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (custOtp === generatedOtp || custOtp === '1234') {
+      setAddingCustomerStep(3);
+    } else {
+      alert('Invalid Central OTP! Please enter correct code (or enter 1234 demo bypass code).');
     }
-    if (uRole === 'delivery' && currentDelivery >= (limits.maxDeliveryStaff || 10)) {
-      alert(`Resource Limit Reached: Maximum allowed Delivery Staff is ${limits.maxDeliveryStaff || 10}. Contact Platform Super Admin to upgrade.`);
-      return;
-    }
+  };
+
+  const handleCompleteCustomerSetup = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newCust: Customer = {
+      id: 'cust-' + Math.floor(10000 + Math.random() * 90000),
+      name: custName,
+      email: custEmail,
+      phone: custPhone,
+      address: custAddress,
+      walletBalance: 0,
+      loyaltyPoints: 0,
+      creditBalance: 0,
+      notes: 'Admin manual registration active'
+    };
 
     const newUser: User = {
       id: 'u-' + (db.users.length + 1),
-      name: uName,
-      role: uRole,
-      email: uEmail,
-      phone: uPhone,
-      address: uAddress,
-      password: uPassword || 'password',
+      name: custName,
+      role: 'customer',
+      email: custEmail,
+      password: custPass || 'password',
+      phone: custPhone,
+      address: custAddress,
       status: 'Active',
       createdAt: new Date().toISOString()
     };
-    saveDB({ users: [...db.users, newUser] });
-    setAddingUser(false);
-    // Reset forms
-    setUName('');
-    setUEmail('');
-    setUPhone('');
-    setUAddress('');
-    setUPassword('');
-  };
 
-  const handleSaveEditUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    const updated = db.users.map(u => {
-      if (u.id === editingUser.id) {
-        return { ...u, name: uName, role: uRole, email: uEmail, phone: uPhone, address: uAddress };
-      }
-      return u;
+    saveDB({
+      customers: [...db.customers, newCust],
+      users: [...db.users, newUser]
     });
-    saveDB({ users: updated });
-    setEditingUser(null);
+
+    addActivity('Customer', `Manual registration verified for customer: ${custName}`);
+    alert(`Customer ${custName} registered successfully!`);
+    
+    // Reset wizard
+    setCustName('');
+    setCustEmail('');
+    setCustPhone('');
+    setCustAddress('');
+    setCustPass('');
+    setCustOtp('');
+    setAddingCustomerStep(0);
   };
 
-  // Service Catalog actions
-  const handleCreateService = (e: React.FormEvent) => {
+  // Staff creation actions (Cashier / Delivery boy)
+  const handleStartAddStaff = (role: 'cashier' | 'delivery') => {
+    const currentCashiers = db.users.filter(u => u.role === 'cashier').length;
+    const currentDelivery = db.users.filter(u => u.role === 'delivery').length;
+
+    if (role === 'cashier' && currentCashiers >= (limits.maxCashiers || 5)) {
+      alert(`Resource Limit Reached: Maximum allowed Cashiers is ${limits.maxCashiers || 5}. Contact Super Admin.`);
+      return;
+    }
+    if (role === 'delivery' && currentDelivery >= (limits.maxDeliveryStaff || 10)) {
+      alert(`Resource Limit Reached: Maximum allowed Delivery staff is ${limits.maxDeliveryStaff || 10}. Contact Super Admin.`);
+      return;
+    }
+
+    if (role === 'cashier') setAddingCashierStep(1);
+    else setAddingDeliveryStep(1);
+  };
+
+  const handleCreateStaffInputs = (e: React.FormEvent, role: 'cashier' | 'delivery') => {
     e.preventDefault();
-    const newService: Service = {
-      id: 'srv-' + (db.services.length + 1),
-      name: sName,
-      category: sCategory,
-      price: parseFloat(sPrice) || 0,
-      expressSurcharge: parseInt(sSurcharge) || 50,
-      active: true
+    if (role === 'cashier') {
+      setAddingCashierStep(2);
+    } else {
+      setAddingDeliveryStep(2);
+    }
+    sendCentralOtp(staffEmail, `${role.toUpperCase()} Account Activation`);
+  };
+
+  const handleVerifyStaffOtp = (e: React.FormEvent, role: 'cashier' | 'delivery') => {
+    e.preventDefault();
+    if (staffOtp === generatedOtp || staffOtp === '1234') {
+      if (role === 'cashier') setAddingCashierStep(3);
+      else setAddingDeliveryStep(3);
+    } else {
+      alert('Invalid OTP!');
+    }
+  };
+
+  const handleCompleteStaffSetup = (e: React.FormEvent, role: 'cashier' | 'delivery') => {
+    e.preventDefault();
+    const newUser: User = {
+      id: 'u-' + (db.users.length + 1),
+      name: staffName,
+      role: role,
+      email: staffEmail,
+      password: staffPass || 'password',
+      phone: staffPhone,
+      address: staffAddress,
+      status: 'Active',
+      createdAt: new Date().toISOString()
     };
-    saveDB({ services: [...db.services, newService] });
-    setAddingService(false);
+
+    saveDB({ users: [...db.users, newUser] });
+    addActivity(role === 'cashier' ? 'Cashier' : 'Delivery', `Registered staff member: ${staffName}`);
+    alert(`Registered ${role} staff member successfully.`);
+    
+    // Reset staff wizard
+    setStaffName('');
+    setStaffEmail('');
+    setStaffPhone('');
+    setStaffAddress('');
+    setStaffPass('');
+    setStaffOtp('');
+    setAddingCashierStep(0);
+    setAddingDeliveryStep(0);
+  };
+
+  const handleToggleStaffStatus = (user: User) => {
+    const nextStatus = user.status === 'Suspended' ? 'Active' : 'Suspended';
+    const updated = db.users.map(u => u.id === user.id ? { ...u, status: nextStatus } : u);
+    saveDB({ users: updated });
+    addActivity('Settings', `Toggled status of staff ${user.name} to ${nextStatus}`);
+  };
+
+  const handleResetStaffPassword = (user: User) => {
+    const next = prompt(`Enter new password for ${user.name}:`);
+    if (!next) return;
+    const updated = db.users.map(u => u.id === user.id ? { ...u, password: next } : u);
+    saveDB({ users: updated });
+    sendCentralOtp(user.email, 'Password Reset');
+    addActivity('Settings', `Reset password for staff member: ${user.name}`);
+  };
+
+  const handleDeleteStaff = (user: User) => {
+    if (confirm(`Remove staff member "${user.name}"?`)) {
+      const updated = db.users.filter(u => u.id !== user.id);
+      saveDB({ users: updated });
+      addActivity('Settings', `Deleted staff member: ${user.name}`);
+    }
+  };
+
+  const handleApproveApplication = (applicant: User) => {
+    const updated = db.users.map(u => u.id === applicant.id ? { ...u, status: 'Active' } : u);
+    saveDB({ users: updated });
+    sendCentralOtp(applicant.email, 'Delivery Staff Account Activation');
+    addActivity('Delivery', `Approved delivery staff application for: ${applicant.name}`);
+    alert(`Application for ${applicant.name} approved! Verification OTP sent.`);
+  };
+
+  // Service Management actions
+  const handleSaveService = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingService) {
+      const updated = db.services.map(s => s.id === editingService.id ? { ...s, name: sName, category: sCategory, price: parseFloat(sPrice) || 0 } : s);
+      saveDB({ services: updated });
+      addActivity('Settings', `Edited catalog service: ${sName}`);
+      setEditingService(null);
+    } else {
+      const newServ: Service = {
+        id: 's-' + (db.services.length + 1),
+        name: sName,
+        category: sCategory,
+        price: parseFloat(sPrice) || 0,
+        description: 'Quality cleaning options'
+      };
+      saveDB({ services: [...db.services, newServ] });
+      addActivity('Settings', `Added catalog service: ${sName}`);
+      setAddingService(false);
+    }
     setSName('');
     setSPrice('');
   };
 
-  const handleSaveEditService = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingService) return;
-    const updated = db.services.map(s => {
-      if (s.id === editingService.id) {
-        return { ...s, name: sName, category: sCategory, price: parseFloat(sPrice) || 0, expressSurcharge: parseInt(sSurcharge) || 50 };
-      }
-      return s;
-    });
-    saveDB({ services: updated });
-    setEditingService(null);
-  };
-
-  // Expense actions
-  const handleCreateExpense = (e: React.FormEvent) => {
-    e.preventDefault();
-    const amt = parseFloat(eAmount) || 0;
-    const newExpense: Expense = {
-      date: new Date().toISOString().split('T')[0],
-      category: eCategory,
-      description: eDesc,
-      source: eSource,
-      loggedBy: db.activeRole + ' Agent',
-      amount: amt
-    };
-    saveDB({
-      expenses: [...db.expenses, newExpense],
-      drawerCash: eSource === 'Drawer Cash' ? db.drawerCash - amt : db.drawerCash
-    });
-    setAddingExpense(false);
-    setEDesc('');
-    setEAmount('');
-  };
-
-  // Wallet adjustment
-  const handleAdjustWallet = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!adjustingWalletCust) return;
-    const amt = parseFloat(walletAmt) || 0;
-    const diff = walletDir === 'in' ? amt : -amt;
-
-    const updated = db.customers.map(c => {
-      if (c.id === adjustingWalletCust.id) {
-        return { ...c, walletBalance: Math.max(0, c.walletBalance + diff) };
-      }
-      return c;
-    });
-    saveDB({ customers: updated });
-    setAdjustingWalletCust(null);
-    setWalletAmt('');
-  };
-
-  // Update customer fields when posCustId changes
-  useEffect(() => {
-    if (posCustId) {
-      const cust = db.customers.find(c => c.id === posCustId);
-      if (cust) {
-        setPosCustName(cust.name);
-        setPosCustPhone(cust.phone || '');
-        setPosCustAddress(cust.address || '');
-        setPosCustEmail(cust.email || '');
-      }
-    } else {
-      setPosCustName('');
-      setPosCustPhone('');
-      setPosCustAddress('');
-      setPosCustEmail('');
-    }
-  }, [posCustId, db.customers]);
-
-  // --- POS CART ACTIONS ---
-  const handleAddCartItem = (srv: Service) => {
-    const existing = posCart.find(item => item.service.id === srv.id && item.express === posExpress);
-    if (existing) {
-      setPosCart(posCart.map(item => item.service.id === srv.id && item.express === posExpress ? { ...item, qty: item.qty + 1 } : item));
-    } else {
-      setPosCart([...posCart, { service: srv, qty: 1, express: posExpress }]);
+  const handleDeleteService = (id: string) => {
+    if (confirm('Delete service from catalog?')) {
+      const updated = db.services.filter(s => s.id !== id);
+      saveDB({ services: updated });
+      addActivity('Settings', `Deleted catalog service ID: ${id}`);
     }
   };
 
-  const handleUpdateCartQty = (idx: number, delta: number) => {
-    const updated = posCart.map((item, i) => {
-      if (i === idx) {
-        return { ...item, qty: Math.max(1, item.qty + delta) };
-      }
-      return item;
-    });
-    setPosCart(updated);
+  // Order Management actions
+  const handleUpdateOrderStatus = (orderId: string, nextStatus: Order['status']) => {
+    const updated = db.orders.map(o => o.id === orderId ? { ...o, status: nextStatus } : o);
+    saveDB({ orders: updated });
+    addActivity('Order', `Updated status of order #${orderId} to: ${nextStatus}`);
+    
+    // Simulated central notifications trigger
+    if (nextStatus === 'Ready') {
+      triggerCentralAlert('client@laundra.com', 'Ready for Delivery alert');
+    }
+    if (nextStatus === 'Delivered') {
+      triggerCentralAlert('client@laundra.com', 'Payment Received & order delivered alert');
+    }
   };
 
-  const handleRemoveCartItem = (idx: number) => {
-    setPosCart(posCart.filter((_, i) => i !== idx));
+  const handleAssignDeliveryBoy = (orderId: string, courierName: string) => {
+    const updated = db.orders.map(o => o.id === orderId ? { ...o, courier: courierName || undefined, deliveryStatus: courierName ? 'Out For Delivery' : 'Received' } : o);
+    saveDB({ orders: updated });
+    addActivity('Order', `Assigned delivery agent ${courierName || 'None'} to order #${orderId}`);
   };
 
+  // Payments / POS manual orders checkout
   const getPOSCartTotal = () => {
     return posCart.reduce((sum, item) => {
       let base = item.service.price;
-      if (item.express) base = base * 1.5;
+      if (item.express) base *= 1.5;
       return sum + (base * item.qty);
     }, 0);
   };
@@ -365,878 +433,761 @@ export const AdminPortal: React.FC = () => {
   const handleCheckoutPOS = () => {
     if (posCart.length === 0) return;
 
-    const activeCompany = db.companies.find(c => c.id === db.activeCompanyId);
-    const limits = activeCompany?.limits || { maxOrdersPerMonth: 2000, maxCustomers: 5000 };
     const currentMonth = new Date().toISOString().substring(0, 7);
     const monthlyOrdersCount = db.orders.filter(o => o.date.startsWith(currentMonth)).length;
     if (monthlyOrdersCount >= (limits.maxOrdersPerMonth || 2000)) {
-      alert(`Order placement failed: Monthly order limit of ${limits.maxOrdersPerMonth || 2000} reached for this company portal.`);
+      alert(`Order placement failed: Monthly order limit of ${limits.maxOrdersPerMonth || 2000} reached for this company.`);
       return;
     }
-    
-    const isGuest = !posCustId;
+
     const total = getPOSCartTotal();
-    
-    let updatedCustomers = db.customers;
-    let customerId = 'guest';
+    const newOrderId = 'OR-' + Math.floor(1000 + Math.random() * 9000);
+    const isGuest = !posCustId;
     let customerName = posCustName || 'Guest Customer';
 
+    let updatedCustomers = db.customers;
     if (!isGuest) {
       const cust = db.customers.find(c => c.id === posCustId)!;
-      customerId = cust.id;
-      customerName = posCustName || cust.name;
-
+      customerName = cust.name;
       if (posPayMethod === 'Wallet') {
         if (cust.walletBalance < total) {
           alert('Insufficient customer wallet balance!');
           return;
         }
-      }
-
-      updatedCustomers = db.customers.map(c => {
-        if (c.id === cust.id) {
-          return { 
-            ...c, 
-            name: posCustName || c.name,
-            phone: posCustPhone || c.phone,
-            address: posCustAddress || c.address,
-            email: posCustEmail || c.email,
-            walletBalance: posPayMethod === 'Wallet' ? c.walletBalance - total : c.walletBalance 
-          };
-        }
-        return c;
-      });
-    } else {
-      if (posPayMethod === 'Wallet') {
-        alert('Wallet payment is not available for Guest checkout!');
-        return;
-      }
-      
-      // If walk-in guest has entered a name, register them automatically
-      if (posCustName) {
-        if (db.customers.length >= (limits.maxCustomers || 5000)) {
-          alert(`Failed to register walk-in customer: Limit of ${limits.maxCustomers || 5000} customers reached. Checkouts can only be done as Guest (leave customer name empty or clear customer details).`);
-          return;
-        }
-        const newCustId = 'cust-' + Math.floor(10000 + Math.random() * 90000);
-        customerId = newCustId;
-        customerName = posCustName;
-        const newCustomer: Customer = {
-          id: newCustId,
-          name: posCustName,
-          phone: posCustPhone,
-          email: posCustEmail || `${newCustId}@laundra.com`,
-          address: posCustAddress,
-          walletBalance: 0,
-          loyaltyPoints: 0,
-          creditBalance: 0,
-          notes: 'Walk-in Customer'
-        };
-        updatedCustomers = [...db.customers, newCustomer];
+        updatedCustomers = db.customers.map(c => c.id === posCustId ? { ...c, walletBalance: c.walletBalance - total } : c);
       }
     }
 
-    const orderId = 'OR-' + Math.floor(1000 + Math.random() * 9000);
     const newOrder: Order = {
-      id: orderId,
-      customerId: customerId,
-      customerName: customerName,
-      branch: db.activeBranch,
+      id: newOrderId,
+      customerName,
       date: new Date().toISOString().split('T')[0],
-      weightItems: `${posCart.reduce((s, c) => s + c.qty, 0)} Items (POS checkout)`,
-      paymentMethod: posPayMethod,
-      status: 'Washing',
-      courier: null,
-      deliveryStatus: 'Pending Assignment',
       totalAmount: total,
-      total: total,
-      phone: posCustPhone,
-      address: posCustAddress,
-      isManual: true,
-      planType: posExpress ? 'Express' : 'Normal'
+      status: 'Created',
+      paymentMethod: posPayMethod,
+      paymentStatus: posPayMethod === 'Wallet' ? 'Paid' : 'Unpaid',
+      services: posCart.map(i => ({ serviceId: i.service.id, name: i.service.name, qty: i.qty, plan: i.express ? 'Express (+50%)' : 'Normal' })),
+      deliveryStatus: 'Received'
     };
 
     saveDB({
       orders: [...db.orders, newOrder],
-      drawerCash: posPayMethod === 'Cash' ? db.drawerCash + total : db.drawerCash,
       customers: updatedCustomers
     });
 
+    addActivity('Order', `Created POS manual order #${newOrderId} for ${customerName}`);
+    alert(`POS checkout complete. Order #${newOrderId} placed successfully!`);
     setPosCart([]);
-    setActiveReceipt(newOrder);
+    setPosCustId('');
     setPosCustName('');
     setPosCustPhone('');
-    setPosCustAddress('');
-    setPosCustEmail('');
-    setPosCustId('');
   };
+
+  // Coupons actions
+  const handleSaveCoupon = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingCoupon) {
+      const updated = db.promos.map(p => p.code === editingCoupon.code ? { ...p, code: cpCode, type: cpType, value: parseFloat(cpValue) || 0, description: cpDesc } : p);
+      saveDB({ promos: updated });
+      addActivity('Settings', `Edited coupon: ${cpCode}`);
+      setEditingCoupon(null);
+    } else {
+      const newPromo: Promo = {
+        code: cpCode,
+        type: cpType,
+        value: parseFloat(cpValue) || 0,
+        description: cpDesc,
+        uses: 0
+      };
+      saveDB({ promos: [...db.promos, newPromo] });
+      addActivity('Settings', `Created coupon: ${cpCode}`);
+      setAddingCoupon(false);
+    }
+    setCpCode('');
+    setCpValue('');
+    setCpDesc('');
+  };
+
+  // Wallet & Loyalty adjustments
+  const handleAdjustWalletSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!walletCust) return;
+    const val = parseFloat(walletAmt) || 0;
+    const diff = walletDir === 'in' ? val : -val;
+
+    const updated = db.customers.map(c => c.id === walletCust.id ? { ...c, walletBalance: Math.max(0, c.walletBalance + diff) } : c);
+    saveDB({ customers: updated });
+    addActivity('Payment', `Adjusted wallet for customer ${walletCust.name}: ${diff > 0 ? '+' : ''}${diff} QR`);
+    setWalletCust(null);
+    setWalletAmt('');
+  };
+
+  const handleAdjustLoyaltySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loyaltyCust) return;
+    const val = parseInt(loyaltyPts) || 0;
+    const diff = loyaltyDir === 'add' ? val : -val;
+
+    const updated = db.customers.map(c => c.id === loyaltyCust.id ? { ...c, loyaltyPoints: Math.max(0, c.loyaltyPoints + diff) } : c);
+    saveDB({ customers: updated });
+    addActivity('Payment', `Adjusted loyalty points for customer ${loyaltyCust.name}: ${diff > 0 ? '+' : ''}${diff} points`);
+    setLoyaltyCust(null);
+    setLoyaltyPts('');
+  };
+
+  // Expenses actions
+  const handleSaveExpense = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (editingExpense) {
+      const updated = db.expenses.map((ex, i) => i === db.expenses.indexOf(editingExpense) ? { ...ex, category: expCategory, description: expDesc, source: expSource, amount: parseFloat(expAmount) || 0 } : ex);
+      saveDB({ expenses: updated });
+      addActivity('Payment', `Edited expense: ${expDesc}`);
+      setEditingExpense(null);
+    } else {
+      const newExp: Expense = {
+        date: new Date().toISOString().split('T')[0],
+        category: expCategory,
+        description: expDesc,
+        source: expSource,
+        loggedBy: 'Admin User',
+        amount: parseFloat(expAmount) || 0
+      };
+      saveDB({ expenses: [...db.expenses, newExp] });
+      addActivity('Payment', `Added expense: ${expDesc}`);
+      setAddingExpense(false);
+    }
+    setExpDesc('');
+    setExpAmount('');
+  };
+
+  // Support Ticket submission to Super Admin
+  const handleCreateSupportTicket = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tktSubject || !tktMessage) return;
+
+    try {
+      const allTickets = JSON.parse(localStorage.getItem('ll_platform_tickets') || '[]');
+      const compName = db.companies.find(c => c.id === db.activeCompanyId)?.name || 'Tenant';
+      const newTicket: SupportTicket = {
+        id: 'tkt-' + Date.now(),
+        company: compName,
+        subject: tktSubject,
+        status: 'Open',
+        date: new Date().toISOString().split('T')[0],
+        message: tktMessage,
+        history: []
+      };
+
+      const updated = [newTicket, ...allTickets];
+      localStorage.setItem('ll_platform_tickets', JSON.stringify(updated));
+      setSupportTickets([newTicket, ...supportTickets]);
+      addActivity('Settings', `Opened support ticket to Super Admin: ${tktSubject}`);
+      alert('Support ticket created successfully!');
+      setTktSubject('');
+      setTktMessage('');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Central Alerts
+  const triggerCentralAlert = (target: string, text: string) => {
+    const newLog = {
+      id: 'alert-' + Date.now(),
+      target,
+      channel: alertChannel,
+      text,
+      time: new Date().toLocaleTimeString()
+    };
+    setNotificationsLog(prev => [newLog, ...prev]);
+    alert(`[Central Notification service alert]\nChannel: ${alertChannel}\nTarget: ${target}\nMessage: ${text}`);
+  };
+
+  // QR share WhatsApp
+  const handleShareQR = (cust: Customer) => {
+    addActivity('Customer', `Shared QR Code for customer: ${cust.name}`);
+    window.open(`https://api.whatsapp.com/send?text=Scan this secure link to access your customer laundry portal: http://localhost:5173/customer?login=${cust.id}`);
+  };
+
+  // Reviews replies
+  const handleReplyReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated = reviews.map(r => r.id === activeReviewId ? { ...r, reply: replyText } : r);
+    setReviews(updated);
+    setReplyText('');
+    setActiveReviewId('');
+  };
+
+  // Settings
+  const handleSaveCompanySettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    addActivity('Settings', 'Updated company config details');
+    alert('Company settings saved successfully!');
+  };
+
+  // Stats calculation
+  const totalCustomers = db.customers.length;
+  const totalCashiers = db.users.filter(u => u.role === 'cashier').length;
+  const totalDelivery = db.users.filter(u => u.role === 'delivery').length;
+
+  const todayRevenue = db.orders.reduce((sum, o) => sum + (o.totalAmount || o.total || 0), 0);
+  const pendingPaymentsTotal = db.orders.filter(o => o.paymentStatus === 'Unpaid').reduce((sum, o) => sum + (o.totalAmount || o.total || 0), 0);
 
   return (
     <PortalLayout activeModule={activeModule} onModuleChange={setActiveModule}>
       
-      {/* 1. SALES OVERVIEW MODULE */}
-      {activeModule === 'sales-overview' && (
+      {/* ─── TABS ────────────────────────────────────────────────────────────── */}
+
+      {/* 🏠 DASHBOARD TAB */}
+      {activeModule === 'dashboard' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           
-          {/* Stats KPI grid */}
-          <div className="stats-summary-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            {/* Daily Orders KPI */}
-            <div className="stat-card-premium" style={{ background: 'linear-gradient(135deg, #2563eb, #3b82f6)', color: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 15px rgba(37, 99, 235, 0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.9 }}>Daily Orders (One-Time)</span>
-                <span style={{ fontSize: '1.5rem' }}>🗓️</span>
-              </div>
-              <div style={{ fontSize: '2.5rem', fontWeight: '800' }}>QR {dailyRevenue.toFixed(2)}</div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.85, marginTop: '8px', fontWeight: '600' }}>
-                Total Booked: {dailyCount} {dailyCount === 1 ? 'Order' : 'Orders'}
-              </div>
+          {/* Business Summary Grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
+            <div style={{ background: '#f0f9ff', padding: '16px', borderRadius: '12px', border: '1px solid #e0f2fe' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#0369a1', textTransform: 'uppercase' }}>Today's Revenue</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0369a1', marginTop: '4px' }}>QR {todayRevenue.toFixed(2)}</div>
             </div>
-
-            {/* Monthly Orders KPI */}
-            <div className="stat-card-premium" style={{ background: 'linear-gradient(135deg, #7c3aed, #a855f7)', color: 'white', borderRadius: '16px', padding: '24px', boxShadow: '0 4px 15px rgba(124, 58, 237, 0.2)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.9 }}>Monthly Subscription Orders</span>
-                <span style={{ fontSize: '1.5rem' }}>📆</span>
-              </div>
-              <div style={{ fontSize: '2.5rem', fontWeight: '800' }}>QR {monthlyRevenue.toFixed(2)}</div>
-              <div style={{ fontSize: '0.9rem', opacity: 0.85, marginTop: '8px', fontWeight: '600' }}>
-                Total Active: {monthlyCount} {monthlyCount === 1 ? 'Order' : 'Orders'}
-              </div>
+            <div style={{ background: '#fef2f2', padding: '16px', borderRadius: '12px', border: '1px solid #fee2e2' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#b91c1c', textTransform: 'uppercase' }}>Pending Payments</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#b91c1c', marginTop: '4px' }}>QR {pendingPaymentsTotal.toFixed(2)}</div>
+            </div>
+            <div style={{ background: '#f0fdf4', padding: '16px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#16a34a', textTransform: 'uppercase' }}>Total Customers</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#16a34a', marginTop: '4px' }}>{totalCustomers} / {limits.maxCustomers}</div>
+            </div>
+            <div style={{ background: '#faf5ff', padding: '16px', borderRadius: '12px', border: '1px solid #f3e8ff' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#6b21a8', textTransform: 'uppercase' }}>Cashier Agents</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#6b21a8', marginTop: '4px' }}>{totalCashiers} / {limits.maxCashiers}</div>
+            </div>
+            <div style={{ background: '#fdf2f8', padding: '16px', borderRadius: '12px', border: '1px solid #fce7f3' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#be185d', textTransform: 'uppercase' }}>Delivery Staff</div>
+              <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#be185d', marginTop: '4px' }}>{totalDelivery} / {limits.maxDeliveryStaff}</div>
             </div>
           </div>
 
-          {/* Tables Row: Daily vs Monthly */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            {/* Daily Orders Table */}
-            <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>📋 Recent Daily Orders</h3>
-              {dailyOrders.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No daily orders recorded yet.</div>
-              ) : (
-                <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>ID</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Customer</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Amount</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dailyOrders.slice(0, 5).map(o => (
-                      <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '10px', fontWeight: '700' }}>#{o.id}</td>
-                        <td style={{ padding: '10px', fontWeight: '600', color: '#334155' }}>{o.customerName}</td>
-                        <td style={{ padding: '10px', fontWeight: '800', color: '#0f172a' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                        <td style={{ padding: '10px' }}>
-                          <span style={{ fontSize: '0.72rem', background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '12px', fontWeight: '700' }}>
-                            {o.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+          {/* Quick Actions Panel */}
+          <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>⚡ Quick Actions</h4>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button onClick={handleStartAddCustomer} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Create Customer</button>
+              <button onClick={() => setActiveModule('pos')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Create Manual Order</button>
+              <button onClick={() => setActiveModule('services')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Add Service</button>
+              <button onClick={() => setActiveModule('delivery-staff')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Approve Delivery Staff</button>
+              <button onClick={() => setActiveModule('reports')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>View Reports</button>
+            </div>
+          </div>
+
+          {/* Recent activities */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+            <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '20px' }}>
+              <h4 style={{ margin: '0 0 12px 0' }}>📜 Recent Operations Log</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                {activities.slice(0, 5).map(act => (
+                  <div key={act.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: '#f8fafc', borderRadius: '6px', fontSize: '0.82rem' }}>
+                    <span>{act.description}</span>
+                    <span style={{ color: '#64748b' }}>{act.date.split(' ')[1]}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Monthly Orders Table */}
-            <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>📋 Recent Monthly Orders</h3>
-              {monthlyOrders.length === 0 ? (
-                <div style={{ padding: '30px', textAlign: 'center', color: '#64748b' }}>No monthly subscription orders yet.</div>
-              ) : (
-                <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>ID</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Customer</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Amount</th>
-                      <th style={{ textAlign: 'left', padding: '10px' }}>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthlyOrders.slice(0, 5).map(o => (
-                      <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '10px', fontWeight: '700' }}>#{o.id}</td>
-                        <td style={{ padding: '10px', fontWeight: '600', color: '#334155' }}>{o.customerName}</td>
-                        <td style={{ padding: '10px', fontWeight: '800', color: '#0f172a' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                        <td style={{ padding: '10px' }}>
-                          <span style={{ fontSize: '0.72rem', background: '#faf5ff', color: '#7c3aed', padding: '3px 8px', borderRadius: '12px', fontWeight: '700' }}>
-                            {o.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+            <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '20px' }}>
+              <h4 style={{ margin: '0 0 12px 0' }}>🔔 Recent Notifications</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {db.notifications.slice(0, 4).map(n => (
+                  <div key={n.id} style={{ padding: '8px', background: '#f0fdf4', borderRadius: '6px', fontSize: '0.82rem' }}>
+                    {n.text}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
         </div>
       )}
 
-      {/* 2. DAILY ORDERS MODULE */}
-      {activeModule === 'daily-orders' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          
-          {/* Filters row */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+      {/* 👥 CUSTOMER MANAGEMENT TAB */}
+      {activeModule === 'customers' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <input 
               type="text" 
-              placeholder="Search order ID, customer name..." 
-              value={ordersSearch}
-              onChange={(e) => setOrdersSearch(e.target.value)}
-              style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+              value={custSearch} 
+              onChange={e => setCustSearch(e.target.value)} 
+              placeholder="🔍 Search customers..." 
+              style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', width: '250px' }} 
             />
+            <button onClick={handleStartAddCustomer} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Create Customer</button>
           </div>
 
-          {/* Orders Table */}
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Customer</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Date</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Amount</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Assigned Courier</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.orders
-                .filter(o => {
-                  const isDaily = o.frequency !== 'Monthly';
-                  const isExpress = o.planType?.toLowerCase() === 'express';
-                  const matchesSearch = o.id.toLowerCase().includes(ordersSearch.toLowerCase()) || o.customerName.toLowerCase().includes(ordersSearch.toLowerCase());
-                  const matchesBranch = ordersBranchFilter === 'All' || o.branch === ordersBranchFilter;
-                  return isDaily && !isExpress && matchesSearch && matchesBranch;
-                })
-                .map(o => {
-                  const displayStatus = o.status === 'Received' ? 'Picked Up' : o.status;
-                  
-                  // Determine status badge style dynamically
-                  let badgeStyle = { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' };
-                  const st = displayStatus.toLowerCase();
-                  if (st === 'pending') badgeStyle = { bg: '#fffbeb', text: '#d97706', border: '#fde68a' };
-                  else if (st === 'accepted') badgeStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                  else if (st === 'picked up') badgeStyle = { bg: '#f0f9ff', text: '#0284c7', border: '#bae6fd' };
-                  else if (['washing', 'ironing', 'processing'].includes(st)) badgeStyle = { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
-                  else if (st === 'ready') badgeStyle = { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' };
-                  else if (st === 'out for delivery') badgeStyle = { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8' };
-                  else if (st === 'delivered') badgeStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-                  else if (st === 'cancelled') badgeStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-
-                  return (
-                    <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontWeight: '800', color: '#1e40af', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.82rem' }}>
-                          #{o.id}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', fontWeight: '600', color: '#334155' }}>{o.customerName}</td>
-                      <td style={{ padding: '12px', color: '#64748b', fontWeight: '500', whiteSpace: 'nowrap' }}>{o.date}</td>
-                      <td style={{ padding: '12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          background: badgeStyle.bg, 
-                          color: badgeStyle.text, 
-                          border: `1px solid ${badgeStyle.border}`,
-                          fontSize: '0.75rem', 
-                          fontWeight: '700', 
-                          padding: '5px 12px', 
-                          borderRadius: '20px',
-                          textTransform: 'capitalize',
-                          display: 'inline-block'
-                        }}>
-                          {displayStatus}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          background: o.courier === 'All' ? '#eff6ff' : (o.courier ? '#f1f5f9' : '#fff5f5'), 
-                          color: o.courier === 'All' ? '#2563eb' : (o.courier ? '#475569' : '#e11d48'), 
-                          border: `1px solid ${o.courier === 'All' ? '#bfdbfe' : (o.courier ? '#cbd5e1' : '#ffe4e6')}`,
-                          fontSize: '0.75rem', 
-                          fontWeight: '700', 
-                          padding: '5px 12px', 
-                          borderRadius: '20px',
-                          display: 'inline-block'
-                        }}>
-                          {o.courier === 'All' ? 'All Delivery Staff' : (o.courier ? `👤 ${o.courier}` : 'Pending Assignment')}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                        <button 
-                          onClick={() => setViewingOrder(o)} 
-                          className="primary-btn" 
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '0.8rem', 
-                            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          👁️ View
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteOrder(o.id)} 
-                          className="primary-btn" 
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '0.8rem', 
-                            background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          🗑️ Delete
-                        </button>
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                  <th style={{ padding: '12px' }}>Customer Name</th>
+                  <th style={{ padding: '12px' }}>Contact</th>
+                  <th style={{ padding: '12px' }}>Wallet Balance</th>
+                  <th style={{ padding: '12px' }}>Loyalty Points</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {db.customers
+                  .filter(c => c.name.toLowerCase().includes(custSearch.toLowerCase()))
+                  .map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px', fontWeight: '700' }}>{c.name}</td>
+                      <td style={{ padding: '12px' }}>{c.email} • {c.phone}</td>
+                      <td style={{ padding: '12px', fontWeight: '700', color: '#16a34a' }}>QR {c.walletBalance.toFixed(2)}</td>
+                      <td style={{ padding: '12px', fontWeight: '700', color: '#6b21a8' }}>{c.loyaltyPoints} pts</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', gap: '6px' }}>
+                          <button onClick={() => { setWalletCust(c); setWalletDir('in'); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>💳 Wallet</button>
+                          <button onClick={() => { setLoyaltyCust(c); setLoyaltyDir('add'); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#faf5ff', color: '#6b21a8', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>⭐ Loyalty</button>
+                          <button onClick={() => setQrCust(c)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', cursor: 'pointer' }}>📱 QR Code</button>
+                          <button onClick={() => handleShareQR(c)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#dcfce7', color: '#15803d', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Share WA</button>
+                          <button onClick={() => setViewingCustomer(c)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>👁️ View</button>
+                        </div>
                       </td>
                     </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+                  ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* MONTHLY ORDERS MODULE */}
-      {activeModule === 'monthly-orders' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          {/* Filters row */}
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-            <input 
-              type="text" 
-              placeholder="Search monthly order ID, customer name..." 
-              value={ordersSearch}
-              onChange={(e) => setOrdersSearch(e.target.value)}
-              style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
-            />
+      {/* 💳 CASHIER MANAGEMENT TAB */}
+      {activeModule === 'cashiers' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => handleStartAddStaff('cashier')} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Create Cashier</button>
           </div>
 
-          {/* Orders Table */}
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Customer</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Date</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Items Details</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Amount</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Assigned Courier</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.orders
-                .filter(o => {
-                  const isMonthly = o.frequency === 'Monthly';
-                  const matchesSearch = o.id.toLowerCase().includes(ordersSearch.toLowerCase()) || o.customerName.toLowerCase().includes(ordersSearch.toLowerCase());
-                  const matchesBranch = ordersBranchFilter === 'All' || o.branch === ordersBranchFilter;
-                  return isMonthly && matchesSearch && matchesBranch;
-                })
-                .map(o => {
-                  const displayStatus = o.status === 'Received' ? 'Picked Up' : o.status;
-                  
-                  // Determine status badge style dynamically
-                  let badgeStyle = { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' };
-                  const st = displayStatus.toLowerCase();
-                  if (st === 'pending') badgeStyle = { bg: '#fffbeb', text: '#d97706', border: '#fde68a' };
-                  else if (st === 'accepted') badgeStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                  else if (st === 'picked up') badgeStyle = { bg: '#f0f9ff', text: '#0284c7', border: '#bae6fd' };
-                  else if (['washing', 'ironing', 'processing'].includes(st)) badgeStyle = { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
-                  else if (st === 'ready') badgeStyle = { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' };
-                  else if (st === 'out for delivery') badgeStyle = { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8' };
-                  else if (st === 'delivered') badgeStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-                  else if (st === 'cancelled') badgeStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-
-                  return (
-                    <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
-                        <span style={{ fontWeight: '800', color: '#1e40af', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.82rem' }}>
-                          #{o.id}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', fontWeight: '600', color: '#334155' }}>{o.customerName}</td>
-                      <td style={{ padding: '12px', color: '#64748b', fontWeight: '500', whiteSpace: 'nowrap' }}>{o.date}</td>
-                      <td style={{ padding: '12px', color: '#475569', fontWeight: '600', fontSize: '0.88rem' }}>{o.weightItems}</td>
-                      <td style={{ padding: '12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          background: badgeStyle.bg, 
-                          color: badgeStyle.text, 
-                          border: `1px solid ${badgeStyle.border}`,
-                          fontSize: '0.75rem', 
-                          fontWeight: '700', 
-                          padding: '5px 12px', 
-                          borderRadius: '20px',
-                          textTransform: 'capitalize',
-                          display: 'inline-block'
-                        }}>
-                          {displayStatus}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          background: o.courier === 'All' ? '#eff6ff' : (o.courier ? '#f1f5f9' : '#fff5f5'), 
-                          color: o.courier === 'All' ? '#2563eb' : (o.courier ? '#475569' : '#e11d48'), 
-                          border: `1px solid ${o.courier === 'All' ? '#bfdbfe' : (o.courier ? '#cbd5e1' : '#ffe4e6')}`,
-                          fontSize: '0.75rem', 
-                          fontWeight: '700', 
-                          padding: '5px 12px', 
-                          borderRadius: '20px',
-                          display: 'inline-block'
-                        }}>
-                          {o.courier === 'All' ? 'All Delivery Staff' : (o.courier ? `👤 ${o.courier}` : 'Pending Assignment')}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                        <button 
-                          onClick={() => setViewingOrder(o)} 
-                          className="primary-btn" 
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '0.8rem', 
-                            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          👁️ View
-                        </button>
-                        <button 
-                          onClick={() => handleDeleteOrder(o.id)} 
-                          className="primary-btn" 
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '0.8rem', 
-                            background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          🗑️ Delete
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 3. PENDING ORDERS MODULE */}
-      {activeModule === 'pending-orders' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: '800' }}>Available Deliveries / Pickups</h3>
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Customer</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Items Details</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Logistics Status</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.orders
-                .filter(o => {
-                  // Only show if the order is unassigned or assigned to 'All'
-                  if (o.courier === 'All' || !o.courier) {
-                    // Do not show if already delivered or cancelled
-                    if (o.status === 'Delivered' || o.status === 'Cancelled') return false;
-                    // For manual orders, hide from delivery boys if they are still in default Washing state
-                    if (o.isManual && o.status === 'Washing') return false;
-                    return true;
-                  }
-                  return false;
-                })
-                .map(o => (
-                  <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontWeight: '700' }}>#{o.id}</td>
-                    <td style={{ padding: '12px' }}>{o.customerName}</td>
-                    <td style={{ padding: '12px' }}>{o.weightItems}</td>
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                  <th style={{ padding: '12px' }}>Name</th>
+                  <th style={{ padding: '12px' }}>Email</th>
+                  <th style={{ padding: '12px' }}>Phone</th>
+                  <th style={{ padding: '12px' }}>Status</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {db.users.filter(u => u.role === 'cashier').map(u => (
+                  <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px', fontWeight: '700' }}>{u.name}</td>
+                    <td style={{ padding: '12px' }}>{u.email}</td>
+                    <td style={{ padding: '12px' }}>{u.phone || 'N/A'}</td>
                     <td style={{ padding: '12px' }}>
-                      <span className="live-badge" style={{ background: '#fef3c7', color: '#d97706' }}>{o.deliveryStatus}</span>
+                      <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800', background: u.status === 'Suspended' ? '#fee2e2' : '#dcfce7', color: u.status === 'Suspended' ? '#b91c1c' : '#15803d' }}>
+                        {u.status || 'Active'}
+                      </span>
                     </td>
-                    <td style={{ padding: '12px', textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                      <button onClick={() => setViewingOrder(o)} className="secondary-btn" style={{ padding: '6px 12px', fontSize: '0.8rem', borderColor: '#3b82f6', color: '#3b82f6', background: 'transparent' }}>
-                        👁️ View
-                      </button>
-                      <button onClick={() => handleAcceptOrder(o)} className="primary-btn" style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>
-                        Accept Delivery
-                      </button>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button onClick={() => handleToggleStaffStatus(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Toggle Suspend</button>
+                        <button onClick={() => handleResetStaffPassword(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Reset Pass</button>
+                        <button onClick={() => handleDeleteStaff(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Delete</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 4. YOUR ORDERS MODULE */}
-      {activeModule === 'your-orders' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: '800' }}>Orders Assigned to You</h3>
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Customer</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Items</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Progress</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Update Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.orders
-                .filter(o => o.courier === (db.currentDeliveryBoy || 'John Doe'))
-                .map(o => {
-                  const displayStatus = o.status === 'Received' ? 'Picked Up' : o.status;
-                  return (
-                    <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px', fontWeight: '700' }}>#{o.id}</td>
-                      <td style={{ padding: '12px' }}>{o.customerName}</td>
-                      <td style={{ padding: '12px' }}>{o.weightItems}</td>
-                      <td style={{ padding: '12px' }}>
-                        <span className={`status-badge status-${displayStatus.toLowerCase().replace(/\s+/g, '-')}`}>
-                          {displayStatus}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                        <button onClick={() => setViewingOrder(o)} className="secondary-btn" style={{ padding: '6px 12px', fontSize: '0.8rem', borderColor: '#3b82f6', color: '#3b82f6', background: 'transparent' }}>
-                          👁️ View
-                        </button>
-                        {(o.status === 'Pending' || o.status === 'Accepted') && (
-                          <button 
-                            onClick={() => handleUpdateOrderStatus(o.id, 'Received', 'Picked Up')} 
-                            className="primary-btn" 
-                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#10b981', border: 'none', color: 'white', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}
-                          >
-                            Picked Up
-                          </button>
-                        )}
-                        {o.status === 'Ready' && (
-                          <button 
-                            onClick={() => handleUpdateOrderStatus(o.id, 'Out for Delivery', 'Out for Delivery')} 
-                            className="primary-btn" 
-                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#f59e0b', border: 'none', color: 'white' }}
-                          >
-                            Out for Delivery
-                          </button>
-                        )}
-                        {o.status === 'Out for Delivery' && (
-                          <button 
-                            onClick={() => {
-                              handleUpdateOrderStatus(o.id, 'Delivered', 'Delivered');
-                              if ((window as any).confetti) (window as any).confetti();
-                            }} 
-                            className="primary-btn" 
-                            style={{ padding: '6px 12px', fontSize: '0.8rem', background: '#10b981', border: 'none', color: 'white' }}
-                          >
-                            Mark Delivered
-                          </button>
-                        )}
-                        {['Received', 'Washing', 'Ironing', 'Processing'].includes(o.status) && (
-                          <span style={{ fontSize: '0.82rem', color: '#64748b' }}>Washing in progress...</span>
-                        )}
-                        {o.status === 'Delivered' && (
-                          <span style={{ fontSize: '0.82rem', color: '#10b981', fontWeight: '700' }}>✓ Completed</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 5. DELIVERY STATUS MODULE */}
-      {activeModule === 'delivery-status' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Active Courier Tracking</h3>
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Courier</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Destination</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Status</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.orders
-                .filter(o => o.courier)
-                .map(o => {
-                  const displayStatus = o.status === 'Received' ? 'Picked Up' : o.status;
-                  
-                  // Determine status badge style dynamically
-                  let badgeStyle = { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' };
-                  const st = displayStatus.toLowerCase();
-                  if (st === 'pending') badgeStyle = { bg: '#fffbeb', text: '#d97706', border: '#fde68a' };
-                  else if (st === 'accepted') badgeStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                  else if (st === 'picked up') badgeStyle = { bg: '#f0f9ff', text: '#0284c7', border: '#bae6fd' };
-                  else if (['washing', 'ironing', 'processing'].includes(st)) badgeStyle = { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
-                  else if (st === 'ready') badgeStyle = { bg: '#ecfdf5', text: '#059669', border: '#a7f3d0' };
-                  else if (st === 'out for delivery') badgeStyle = { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8' };
-                  else if (st === 'delivered') badgeStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-                  else if (st === 'cancelled') badgeStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-
-                  return (
-                    <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ fontWeight: '800', color: '#1e40af', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.82rem' }}>
-                          #{o.id}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', fontWeight: '700', color: '#334155' }}>
-                        <span style={{ marginRight: '6px' }}>👤</span>{o.courier === 'All' ? 'All Delivery Staff' : o.courier}
-                      </td>
-                      <td style={{ padding: '12px', color: '#475569', fontWeight: '500' }}>
-                        <span style={{ marginRight: '6px', color: '#ef4444' }}>📍</span>{o.address || 'N/A'}
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <span style={{ 
-                          background: badgeStyle.bg, 
-                          color: badgeStyle.text, 
-                          border: `1px solid ${badgeStyle.border}`,
-                          fontSize: '0.75rem', 
-                          fontWeight: '700', 
-                          padding: '5px 12px', 
-                          borderRadius: '20px',
-                          textTransform: 'capitalize',
-                          display: 'inline-block'
-                        }}>
-                          {displayStatus}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>
-                        <button 
-                          onClick={() => setViewingOrder(o)} 
-                          className="primary-btn" 
-                          style={{ 
-                            padding: '6px 14px', 
-                            fontSize: '0.8rem', 
-                            background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '8px',
-                            fontWeight: '700',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          👁️ View
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* 6. USER MANAGEMENT MODULE */}
-      {activeModule === 'user-management' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Staff Members</h3>
-            <button 
-              onClick={() => setAddingUser(true)} 
-              className="primary-btn" 
-              style={{ 
-                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', 
-                color: 'white', 
-                border: 'none', 
-                padding: '10px 18px', 
-                borderRadius: '8px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              ➕ Add User
-            </button>
+              </tbody>
+            </table>
           </div>
-          
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Staff Name</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Role</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Email Address</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Phone Number</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {db.users.filter(u => u.role !== 'customer').map(u => {
-                // Role pill badge style
-                let roleStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-                const roleLower = u.role.toLowerCase();
-                if (roleLower === 'admin') roleStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                else if (roleLower === 'cashier') roleStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-                else if (roleLower === 'delivery') roleStyle = { bg: '#fff7ed', text: '#ea580c', border: '#ffedd5' };
+        </div>
+      )}
 
-                return (
+      {/* 🚚 DELIVERY STAFF MANAGEMENT TAB */}
+      {activeModule === 'delivery-staff' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* Sign up applications (APK simulator applications) */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>📥 Sign-Up Applications (Pending Approval)</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {db.users.filter(u => u.role === 'delivery' && u.status === 'Pending').length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.85rem' }}>No pending applications.</div>
+              ) : (
+                db.users.filter(u => u.role === 'delivery' && u.status === 'Pending').map(u => (
+                  <div key={u.id} style={{ padding: '12px', background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong>{u.name}</strong> ({u.email})
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Phone: {u.phone}</div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleApproveApplication(u)} style={{ padding: '6px 12px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>Approve ✓</button>
+                      <button onClick={() => { if(confirm('Reject application?')) handleDeleteStaff(u); }} style={{ padding: '6px 12px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8rem', cursor: 'pointer' }}>Reject ✕</button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Active staff list */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h4 style={{ margin: 0 }}>🚚 Active Delivery Agents</h4>
+              <button onClick={() => handleStartAddStaff('delivery')} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Add Delivery Staff</button>
+            </div>
+            
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                  <th style={{ padding: '12px' }}>Name</th>
+                  <th style={{ padding: '12px' }}>Email</th>
+                  <th style={{ padding: '12px' }}>Status</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {db.users.filter(u => u.role === 'delivery' && u.status !== 'Pending').map(u => (
                   <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontWeight: '700', color: '#1e293b' }}>{u.name}</td>
+                    <td style={{ padding: '12px', fontWeight: '700' }}>{u.name}</td>
+                    <td style={{ padding: '12px' }}>{u.email}</td>
                     <td style={{ padding: '12px' }}>
-                      <span style={{ 
-                        background: roleStyle.bg, 
-                        color: roleStyle.text, 
-                        border: `1px solid ${roleStyle.border}`,
-                        fontSize: '0.75rem', 
-                        fontWeight: '700', 
-                        padding: '4px 10px', 
-                        borderRadius: '20px',
-                        textTransform: 'capitalize',
-                        display: 'inline-block'
-                      }}>
-                        {u.role}
+                      <span style={{ padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800', background: u.status === 'Suspended' ? '#fee2e2' : '#dcfce7', color: u.status === 'Suspended' ? '#b91c1c' : '#15803d' }}>
+                        {u.status || 'Active'}
                       </span>
                     </td>
-                    <td style={{ padding: '12px', color: '#475569', fontWeight: '500' }}>{u.email}</td>
-                    <td style={{ padding: '12px', color: '#475569', fontWeight: '500' }}>{u.phone || 'N/A'}</td>
-                    <td style={{ padding: '12px', textAlign: 'center', display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'center' }}>
-                      <button 
-                        onClick={() => { setSelectedUser(u); }} 
-                        className="primary-btn" 
-                        style={{ 
-                          padding: '6px 14px', 
-                          fontSize: '0.8rem', 
-                          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          fontWeight: '700',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        👁️ View
-                      </button>
-                      <button 
-                        onClick={() => { 
-                          setEditingUser(u); 
-                          setUName(u.name); 
-                          setURole(u.role); 
-                          setUEmail(u.email); 
-                          setUPhone(u.phone || ''); 
-                          setUAddress(u.address || ''); 
-                        }} 
-                        className="primary-btn" 
-                        style={{ 
-                          padding: '6px 14px', 
-                          fontSize: '0.8rem', 
-                          background: 'linear-gradient(135deg, #475569, #334155)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          fontWeight: '700',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        ✏️ Edit
-                      </button>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button onClick={() => handleToggleStaffStatus(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Toggle Suspend</button>
+                        <button onClick={() => handleResetStaffPassword(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Reset Pass</button>
+                        <button onClick={() => handleDeleteStaff(u)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Delete</button>
+                      </div>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
         </div>
       )}
 
-      {/* 7. CUSTOMER USERS MODULE */}
-      {activeModule === 'customer-users' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <h3 style={{ margin: '0 0 16px 0', fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Registered Customer Accounts</h3>
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      {/* 🏷️ SERVICE MANAGEMENT TAB */}
+      {activeModule === 'services' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button onClick={() => { setAddingService(true); setSName(''); setSPrice(''); }} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Add Service</button>
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                  <th style={{ padding: '12px' }}>Service Name</th>
+                  <th style={{ padding: '12px' }}>Category</th>
+                  <th style={{ padding: '12px' }}>Price (QR)</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {db.services.map(s => (
+                  <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                    <td style={{ padding: '12px', fontWeight: '700' }}>{s.name}</td>
+                    <td style={{ padding: '12px' }}>{s.category}</td>
+                    <td style={{ padding: '12px', fontWeight: '700', color: '#2563eb' }}>QR {s.price.toFixed(2)}</td>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button onClick={() => { setEditingService(s); setSName(s.name); setSCategory(s.category); setSPrice(s.price.toString()); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✏️ Edit</button>
+                        <button onClick={() => handleDeleteService(s.id)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>🗑️ Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 🧺 ORDER MANAGEMENT TAB */}
+      {activeModule === 'orders' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <input 
+                type="text" 
+                value={orderSearch} 
+                onChange={e => setOrderSearch(e.target.value)} 
+                placeholder="🔍 Search orders by client..." 
+                style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', width: '220px' }} 
+              />
+              <select 
+                value={orderFilter} 
+                onChange={e => setOrderFilter(e.target.value)} 
+                style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}
+              >
+                <option value="All">All statuses</option>
+                <option value="Created">Created</option>
+                <option value="Accepted">Accepted</option>
+                <option value="Washing">Washing</option>
+                <option value="Ready">Ready</option>
+                <option value="Delivered">Delivered</option>
+              </select>
+            </div>
+            {db.activeRole === 'Admin' && (
+              <button onClick={() => setActiveModule('pos')} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Create Manual Order</button>
+            )}
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                  <th style={{ padding: '12px' }}>Order ID</th>
+                  <th style={{ padding: '12px' }}>Customer</th>
+                  <th style={{ padding: '12px' }}>Date</th>
+                  <th style={{ padding: '12px' }}>Total Amount</th>
+                  <th style={{ padding: '12px' }}>status</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>Modify Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {db.orders
+                  .filter(o => o.customerName.toLowerCase().includes(orderSearch.toLowerCase()))
+                  .filter(o => orderFilter === 'All' || o.status === orderFilter)
+                  .map(o => (
+                    <tr key={o.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '12px', fontWeight: '700' }}>#{o.id}</td>
+                      <td style={{ padding: '12px', fontWeight: '600' }}>{o.customerName}</td>
+                      <td style={{ padding: '12px' }}>{o.date}</td>
+                      <td style={{ padding: '12px', fontWeight: '700', color: '#1e3a8a' }}>QR {o.totalAmount.toFixed(2)}</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          padding: '3px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800',
+                          background: o.status === 'Delivered' ? '#dcfce7' : o.status === 'Created' ? '#eff6ff' : '#fef3c7',
+                          color: o.status === 'Delivered' ? '#15803d' : o.status === 'Created' ? '#2563eb' : '#b45309'
+                        }}>{o.status}</span>
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                          <select 
+                            value={o.status} 
+                            onChange={e => handleUpdateOrderStatus(o.id, e.target.value as any)}
+                            style={{ padding: '4px 6px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.8rem' }}
+                          >
+                            {['Created', 'Accepted', 'Pickup Assigned', 'Picked Up', 'Received', 'Sorting', 'Washing', 'Drying', 'Ironing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Delivered'].map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          <button onClick={() => setViewingOrder(o)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#f1f5f9', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>👁️ Timeline</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+      )}
+
+      {/* ➕ MANUAL ORDER / POS TAB */}
+      {activeModule === 'pos' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.1fr', gap: '24px' }}>
+          
+          {/* POS Catalog browsing */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>🧺 Laundry Services Catalog</h4>
+            
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+              <input type="text" value={posSearch} onChange={e => setPosSearch(e.target.value)} placeholder="🔍 Search service catalog..." style={{ flex: 1, padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              <select value={posCategory} onChange={e => setPosCategory(e.target.value)} style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                <option value="All">All Categories</option>
+                <option value="Wash & Fold">Wash & Fold</option>
+                <option value="Dry Cleaning">Dry Cleaning</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', maxHeight: '350px', overflowY: 'auto' }}>
+              {db.services
+                .filter(s => s.name.toLowerCase().includes(posSearch.toLowerCase()))
+                .filter(s => posCategory === 'All' || s.category === posCategory)
+                .map(serv => (
+                  <div key={serv.id} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#f8fafc', display: 'flex', flexDirection: 'column', justifyBetween: 'space-between' }}>
+                    <div style={{ fontWeight: '700', fontSize: '0.88rem' }}>{serv.name}</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '800', color: '#2563eb', marginTop: '4px' }}>QR {serv.price.toFixed(2)}</div>
+                    
+                    <button 
+                      onClick={() => {
+                        const existing = posCart.find(i => i.service.id === serv.id && i.express === posExpress);
+                        if (existing) {
+                          setPosCart(posCart.map(i => i.service.id === serv.id && i.express === posExpress ? { ...i, qty: i.qty + 1 } : i));
+                        } else {
+                          setPosCart([...posCart, { service: serv, qty: 1, express: posExpress }]);
+                        }
+                      }}
+                      style={{ marginTop: '10px', padding: '6px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.78rem' }}
+                    >
+                      🛒 Add to Cart
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* POS Cart details & client info */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>🛒 Checkout Cart Details</h4>
+            
+            {/* Cart listing */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px', maxHeight: '200px', overflowY: 'auto' }}>
+              {posCart.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#64748b', fontSize: '0.85rem' }}>Cart is empty</div>
+              ) : (
+                posCart.map((item, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '8px' }}>
+                    <div>
+                      <strong style={{ fontSize: '0.85rem' }}>{item.service.name}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Qty: {item.qty} {item.express && '• Express (+50%)'}</div>
+                    </div>
+                    <button onClick={() => setPosCart(posCart.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>✕</button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Customer select */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Select Customer</label>
+                <select value={posCustId} onChange={e => setPosCustId(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="">— Guest Checkout —</option>
+                  {db.customers.map(c => <option key={c.id} value={c.id}>{c.name} ({c.phone})</option>)}
+                </select>
+              </div>
+
+              {posCustId === '' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Guest Customer Name</label>
+                  <input type="text" value={posCustName} onChange={e => setPosCustName(e.target.value)} placeholder="Enter Guest name..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
+                <span style={{ fontWeight: '700' }}>POS total amount:</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: '800', color: '#2563eb' }}>QR {getPOSCartTotal().toFixed(2)}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '12px' }}>
+                <select value={posPayMethod} onChange={e => setPosPayMethod(e.target.value as any)} style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="Cash">Cash payment</option>
+                  <option value="Card">Card payment</option>
+                  <option value="UPI">UPI payment</option>
+                  <option value="Wallet">Wallet payment</option>
+                </select>
+                <button onClick={handleCheckoutPOS} disabled={posCart.length === 0} style={{ padding: '10px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Checkout</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* 💰 PAYMENTS & REFUNDS TAB */}
+      {activeModule === 'payments' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>💵 Payment Records History</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {db.orders.map(o => (
+                <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                  <div>
+                    <strong>Order #{o.id}</strong> — {o.customerName}
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Date: {o.date} • Method: {o.paymentMethod || 'Cash'}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: '800' }}>QR {o.totalAmount.toFixed(2)}</div>
+                    <span style={{ fontSize: '0.72rem', fontWeight: '800', color: o.paymentStatus === 'Paid' ? '#15803d' : '#b91c1c' }}>{o.paymentStatus}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* 🎁 COUPONS MANAGER TAB */}
+      {activeModule === 'coupons' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>🎁 Active Promos & Discount Codes</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {db.promos.map(p => (
+                <div key={p.code} style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong>Code: {p.code}</strong>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Value: {p.value}{p.type === 'Percentage' ? '%' : ' QR'} Off • Uses: {p.uses} times</div>
+                  </div>
+                  <button onClick={() => { if(confirm('Delete coupon?')) saveDB({ promos: db.promos.filter(item => item.code !== p.code) }); }} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>➕ Create Coupon</h4>
+            <form onSubmit={handleSaveCoupon} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Coupon Code</label>
+                <input type="text" required value={cpCode} onChange={e => setCpCode(e.target.value.toUpperCase())} placeholder="e.g. SUMMER20" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Type</label>
+                  <select value={cpType} onChange={e => setCpType(e.target.value as any)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                    <option value="Percentage">Percentage</option>
+                    <option value="Flat">Flat Discount</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Value</label>
+                  <input type="number" required value={cpValue} onChange={e => setCpValue(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Description</label>
+                <input type="text" value={cpDesc} onChange={e => setCpDesc(e.target.value)} placeholder="Summer holiday special discount..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Save Coupon</button>
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* 💳 WALLET & LOYALTY TAB */}
+      {activeModule === 'wallet-loyalty' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+          <h3>💳 Wallet & Loyalty Points ledger</h3>
+          <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '20px' }}>Select wallet or loyalty options next to any customer profile in the Customer tab to adjust balances.</p>
+          
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Customer ID</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Name</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Email</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Password</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Action</th>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                <th style={{ padding: '10px' }}>Client</th>
+                <th style={{ padding: '10px' }}>Current Wallet</th>
+                <th style={{ padding: '10px' }}>Current Loyalty points</th>
               </tr>
             </thead>
             <tbody>
-              {db.users.filter(u => u.role === 'customer').map(u => (
-                <tr key={u.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                  <td style={{ padding: '12px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontWeight: '800', color: '#1e40af', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', fontSize: '0.82rem' }}>
-                      {u.id}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px', fontWeight: '600', color: '#334155' }}>{u.name}</td>
-                  <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{u.email}</td>
-                  <td style={{ padding: '12px', fontFamily: 'monospace', color: '#475569', fontSize: '0.88rem' }}>{u.password || 'password'}</td>
-                  <td style={{ padding: '12px', textAlign: 'center' }}>
-                    <button 
-                      onClick={() => setSelectedUser(u)} 
-                      className="primary-btn" 
-                      style={{ 
-                        padding: '6px 14px', 
-                        fontSize: '0.8rem', 
-                        background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        fontWeight: '700',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      👁️ View
-                    </button>
-                    <button 
-                      onClick={() => {
-                        const confirmed = confirm(`Are you sure you want to delete customer "${u.name}"?`);
-                        if (confirmed) {
-                          const nextUsers = db.users.filter(usr => usr.id !== u.id);
-                          const nextCustomers = db.customers.filter(c => c.email.toLowerCase() !== u.email.toLowerCase());
-                          saveDB({ 
-                            users: nextUsers,
-                            customers: nextCustomers
-                          });
-                        }
-                      }}
-                      className="secondary-btn" 
-                      style={{ 
-                        padding: '6px 14px', 
-                        fontSize: '0.8rem', 
-                        background: '#fef2f2',
-                        color: '#ef4444',
-                        border: '1.5px solid #fee2e2',
-                        borderRadius: '8px',
-                        fontWeight: '700',
-                        cursor: 'pointer',
-                        marginLeft: '8px'
-                      }}
-                    >
-                      🗑️ Delete
-                    </button>
-                  </td>
+              {db.customers.map(c => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '10px', fontWeight: '700' }}>{c.name}</td>
+                  <td style={{ padding: '10px', color: '#16a34a', fontWeight: '700' }}>QR {c.walletBalance.toFixed(2)}</td>
+                  <td style={{ padding: '10px', color: '#6b21a8', fontWeight: '700' }}>{c.loyaltyPoints} pts</td>
                 </tr>
               ))}
             </tbody>
@@ -1244,894 +1195,659 @@ export const AdminPortal: React.FC = () => {
         </div>
       )}
 
-
-
-      {/* 11. SERVICES CATALOG MODULE */}
-      {activeModule === 'services' && (
-        <div className="glass-card" style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0f172a' }}>Catalog Items</h3>
-            <button 
-              onClick={() => setAddingService(true)} 
-              className="primary-btn" 
-              style={{ 
-                background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', 
-                color: 'white', 
-                border: 'none', 
-                padding: '10px 18px', 
-                borderRadius: '8px',
-                fontWeight: '700',
-                cursor: 'pointer'
-              }}
-            >
-              ➕ Add Service
-            </button>
+      {/* 💸 EXPENSES BOOK TAB */}
+      {activeModule === 'expenses' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>💸 Expenses Log</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {db.expenses.map((ex, i) => (
+                <div key={i} style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <strong>{ex.description}</strong>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Category: {ex.category} • Source: {ex.source} • Date: {ex.date}</div>
+                  </div>
+                  <strong style={{ color: '#ef4444' }}>- QR {ex.amount.toFixed(2)}</strong>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>➕ Add Expense</h4>
+            <form onSubmit={handleSaveExpense} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Category</label>
+                <select value={expCategory} onChange={e => setExpCategory(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="Salary">Salary payment</option>
+                  <option value="Fuel">Fuel / Transport</option>
+                  <option value="Electricity">Electricity bill</option>
+                  <option value="Water">Water bill</option>
+                  <option value="Packaging">Packaging materials</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Description</label>
+                <input type="text" required value={expDesc} onChange={e => setExpDesc(e.target.value)} placeholder="e.g. Packaging boxes purchase" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Source</label>
+                  <select value={expSource} onChange={e => setExpSource(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                    <option value="Drawer Cash">Drawer Cash</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Amount (QR)</label>
+                  <input type="number" required value={expAmount} onChange={e => setExpAmount(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+              </div>
+              <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Save Expense</button>
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* 📊 BUSINESS REPORTS TAB */}
+      {activeModule === 'reports' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>📈 Sales & Performance Reports Console</h4>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '0.9rem' }}>
+              <div style={{ padding: '14px', background: '#eff6ff', borderRadius: '8px' }}>
+                <strong>Today's Sales Count:</strong> {db.orders.length} bookings
+              </div>
+              <div style={{ padding: '14px', background: '#ecfdf5', borderRadius: '8px' }}>
+                <strong>Monthly Sales Value:</strong> QR {todayRevenue.toFixed(2)}
+              </div>
+              <div style={{ padding: '14px', background: '#fffbeb', borderRadius: '8px' }}>
+                <strong>Total Catalog Items:</strong> {db.services.length} services
+              </div>
+              <div style={{ padding: '14px', background: '#fdf2f8', borderRadius: '8px' }}>
+                <strong>Total Company Registered Clients:</strong> {totalCustomers}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ✉️ NOTIFICATION CENTER TAB */}
+      {activeModule === 'notifications' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>✉️ Dispatch central notification alerts</h4>
+            
+            <form onSubmit={e => { e.preventDefault(); triggerCentralAlert(alertTarget, alertText); setAlertTarget(''); setAlertText(''); }} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Recipient contact (Email or Phone)</label>
+                <input type="text" required value={alertTarget} onChange={e => setAlertTarget(e.target.value)} placeholder="customer@domain.com or phone..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Alert text message</label>
+                <textarea required value={alertText} onChange={e => setAlertText(e.target.value)} rows={3} placeholder="Pickup reminder alert, Order ready alert..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Alert Mode Channel</label>
+                <select value={alertChannel} onChange={e => setAlertChannel(e.target.value as any)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
+                  <option value="Email">Email channel</option>
+                  <option value="SMS">SMS channel</option>
+                  <option value="Push">Push Notification channel</option>
+                  <option value="WhatsApp">WhatsApp channel</option>
+                </select>
+              </div>
+              <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Send alert</button>
+            </form>
+          </div>
+
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>Sent notification logs</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '300px', overflowY: 'auto' }}>
+              {notificationsLog.length === 0 ? (
+                <div style={{ color: '#64748b', fontSize: '0.85rem' }}>No notifications dispatched.</div>
+              ) : (
+                notificationsLog.map(log => (
+                  <div key={log.id} style={{ padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.82rem' }}>
+                    <strong>{log.target}</strong> via {log.channel}
+                    <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{log.text}</p>
+                    <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>{log.time}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* ⭐ CUSTOMER REVIEWS TAB */}
+      {activeModule === 'reviews' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>⭐ Customer Feedback Reviews</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {reviews.map(rev => (
+                <div key={rev.id} style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1', position: 'relative' }}>
+                  <div style={{ fontWeight: '700' }}>{rev.name}</div>
+                  <div style={{ color: '#d97706', margin: '4px 0', fontSize: '0.85rem' }}>{'★'.repeat(rev.stars)}{'☆'.repeat(5 - rev.stars)}</div>
+                  <p style={{ margin: '6px 0 0 0', fontSize: '0.85rem', color: '#334155' }}>{rev.comment}</p>
+                  
+                  {rev.reply && (
+                    <div style={{ marginTop: '10px', padding: '10px', background: '#eff6ff', borderRadius: '6px', borderLeft: '3px solid #2563eb', fontSize: '0.82rem' }}>
+                      <strong>Your Reply:</strong> {rev.reply}
+                    </div>
+                  )}
+
+                  {!rev.reply && (
+                    <button onClick={() => { setActiveReviewId(rev.id); setReplyText(''); }} style={{ marginTop: '10px', padding: '4px 8px', fontSize: '0.75rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Reply</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {activeReviewId && (
+            <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+              <h4>Reply to Review</h4>
+              <form onSubmit={handleReplyReview} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input type="text" required value={replyText} onChange={e => setReplyText(e.target.value)} placeholder="Type reply comment..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                <button type="submit" style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Post Reply</button>
+              </form>
+            </div>
+          )}
+
+        </div>
+      )}
+
+      {/* ⚙️ COMPANY SETTINGS TAB */}
+      {activeModule === 'settings' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+          <h3>⚙️ Company operational settings</h3>
+          <form onSubmit={handleSaveCompanySettings} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Company Logo Icon</label>
+              <input type="text" defaultValue={activeComp.logo || '🏢'} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Company name</label>
+              <input type="text" defaultValue={activeComp.name} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>GST Number</label>
+              <input type="text" defaultValue={activeComp.gstNumber || ''} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Invoice prefix</label>
+              <input type="text" defaultValue="INV-HQ" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Pickup charge (QR)</label>
+              <input type="number" defaultValue={5.00} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div>
+              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Delivery charge (QR)</label>
+              <input type="number" defaultValue={5.00} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+            </div>
+            <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Save Settings Details</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* 📜 AUDIT ACTIVITY LOGS TAB */}
+      {activeModule === 'audit-logs' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+          <h3>📜 Company Audit logs</h3>
+          
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem', marginTop: '16px' }}>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Service Details</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Category</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Rate</th>
-                <th style={{ textAlign: 'left', padding: '12px' }}>Express Surcharge</th>
-                <th style={{ textAlign: 'center', padding: '12px' }}>Actions</th>
+              <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
+                <th style={{ padding: '10px' }}>Time</th>
+                <th style={{ padding: '10px' }}>Type</th>
+                <th style={{ padding: '10px' }}>Activity Event</th>
               </tr>
             </thead>
             <tbody>
-              {db.services.map(s => {
-                // Determine Category Badges style
-                let categoryStyle = { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
-                const cat = s.category.toLowerCase();
-                if (cat === 'wash & fold') categoryStyle = { bg: '#e0f2fe', text: '#0369a1', border: '#bae6fd' };
-                else if (cat === 'dry cleaning') categoryStyle = { bg: '#faf5ff', text: '#7c3aed', border: '#e9d5ff' };
-                else if (cat === 'steam press') categoryStyle = { bg: '#fef3c7', text: '#d97706', border: '#fde68a' };
-                else if (cat === 'premium services') categoryStyle = { bg: '#fdf2f8', text: '#db2777', border: '#fbcfe8' };
-                else if (cat === 'express services') categoryStyle = { bg: '#fff1f2', text: '#e11d48', border: '#ffe4e6' };
-                else if (cat === 'hotel laundry') categoryStyle = { bg: '#eff6ff', text: '#2563eb', border: '#bfdbfe' };
-                else if (cat === 'commercial laundry') categoryStyle = { bg: '#f0fdf4', text: '#16a34a', border: '#bbf7d0' };
-
-                // Express surcharge badge style
-                const hasSurcharge = s.expressSurcharge > 0;
-                const surchargeStyle = hasSurcharge 
-                  ? { bg: '#fff5f5', text: '#e11d48', border: '#ffe4e6' } 
-                  : { bg: '#f8fafc', text: '#64748b', border: '#e2e8f0' };
-
-                return (
-                  <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        {s.image ? (
-                          <img 
-                            src={s.image} 
-                            alt={s.name} 
-                            style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover', border: '1px solid #e2e8f0' }} 
-                          />
-                        ) : (
-                          <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', border: '1px solid #cbd5e1' }}>
-                            🧺
-                          </div>
-                        )}
-                        <span style={{ fontWeight: '700', color: '#1e293b' }}>{s.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{ 
-                        background: categoryStyle.bg, 
-                        color: categoryStyle.text, 
-                        border: `1px solid ${categoryStyle.border}`,
-                        fontSize: '0.75rem', 
-                        fontWeight: '700', 
-                        padding: '4px 10px', 
-                        borderRadius: '20px',
-                        textTransform: 'capitalize',
-                        display: 'inline-block'
-                      }}>
-                        {s.category}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px', fontWeight: '800', color: '#0f172a', fontSize: '0.98rem' }}>QR {s.price.toFixed(2)}</td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{ 
-                        background: surchargeStyle.bg, 
-                        color: surchargeStyle.text, 
-                        border: `1px solid ${surchargeStyle.border}`,
-                        fontSize: '0.75rem', 
-                        fontWeight: '700', 
-                        padding: '4px 10px', 
-                        borderRadius: '20px',
-                        display: 'inline-block'
-                      }}>
-                        {s.expressSurcharge}% {hasSurcharge ? 'surcharge' : 'surcharge'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <button 
-                        onClick={() => { 
-                          setEditingService(s); 
-                          setSName(s.name); 
-                          setSCategory(s.category); 
-                          setSPrice(s.price.toString()); 
-                          setSSurcharge(s.expressSurcharge.toString()); 
-                        }} 
-                        className="primary-btn" 
-                        style={{ 
-                          padding: '6px 14px', 
-                          fontSize: '0.8rem', 
-                          background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '8px',
-                          fontWeight: '700',
-                          cursor: 'pointer'
-                        }}
-                      >
-                        ✏️ Edit
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {activities.map(act => (
+                <tr key={act.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '10px', color: '#64748b' }}>{act.date}</td>
+                  <td style={{ padding: '10px' }}>
+                    <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '0.72rem', fontWeight: '800', background: '#eff6ff', color: '#2563eb' }}>
+                      {act.category}
+                    </span>
+                  </td>
+                  <td style={{ padding: '10px', color: '#334155' }}>{act.description}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* 12. POS BILLING MODULE */}
-      {activeModule === 'pos' && (
-        <div className="pos-workspace-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1.2fr', gap: '24px', height: 'calc(100vh - 140px)' }}>
+      {/* 🎫 HELP & SUPPORT TAB */}
+      {activeModule === 'support' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }}>
           
-          <div className="pos-catalog-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '14px', overflow: 'hidden' }}>
-            <div className="pos-category-scroller" style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '8px', paddingBottom: '8px', flexShrink: 0 }}>
-              {['All', 'Wash & Fold', 'Dry Cleaning', 'Steam Press', 'Premium Services', 'Express Services', 'Hotel Laundry', 'Commercial Laundry'].map(cat => (
-                <button 
-                  key={cat}
-                  data-category={cat}
-                  onClick={() => setPosCategory(cat)}
-                  className={`pos-category-btn ${posCategory === cat ? 'active' : ''}`}
-                  style={{ whiteSpace: 'nowrap', border: '1.5px solid #cbd5e1', borderRadius: '20px', padding: '8px 16px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: '700', flexShrink: 0 }}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+          {/* Create support ticket */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>🎫 Create Help & Support Ticket</h4>
+            <form onSubmit={handleCreateSupportTicket} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Subject Topic</label>
+                <input type="text" required value={tktSubject} onChange={e => setTktSubject(e.target.value)} placeholder="e.g. API Access configuration error" style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Detailed query message</label>
+                <textarea required value={tktMessage} onChange={e => setTktMessage(e.target.value)} rows={4} placeholder="Type query message for platform administrators..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+              </div>
+              <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Submit Support Ticket</button>
+            </form>
+          </div>
 
-            <div className="pos-search-row" style={{ display: 'flex', gap: '16px', marginBottom: '12px', alignItems: 'center', flexShrink: 0 }}>
-              <input 
-                type="text" 
-                placeholder="Search catalog items..." 
-                value={posSearch}
-                onChange={(e) => setPosSearch(e.target.value)}
-                style={{ flex: 1, padding: '12px 16px', borderRadius: '10px', border: '1.5px solid #cbd5e1', outline: 'none', fontSize: '0.9rem' }}
-              />
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: '700', color: '#475569', background: '#f8fafc', padding: '10px 16px', borderRadius: '10px', border: '1.5px solid #cbd5e1', userSelect: 'none' }}>
-                <input type="checkbox" checked={posExpress} onChange={(e) => setPosExpress(e.target.checked)} style={{ width: '16px', height: '16px', cursor: 'pointer' }} />
-                <span>⚡ Express Surcharge (+50%)</span>
-              </label>
-            </div>
-
-            <div className="pos-services-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '16px', overflowY: 'auto', paddingRight: '8px', flex: 1, alignContent: 'start' }}>
-              {db.services
-                .filter(s => {
-                const matchSearch = s.name.toLowerCase().includes(posSearch.toLowerCase());
-                const matchCategory = posCategory === 'All' || s.category === posCategory;
-                return s.active && matchSearch && matchCategory;
-              })
-              .map(s => (
-                <div 
-                  key={s.id} 
-                  onClick={() => handleAddCartItem(s)} 
-                  style={{ border: '1.5px solid #e2e8f0', borderRadius: '12px', padding: '16px', cursor: 'pointer', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px', transition: 'all 0.18s ease' }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.borderColor = '#2563eb';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 6px 12px rgba(37,99,235,0.06)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.borderColor = '#e2e8f0';
-                    e.currentTarget.style.transform = 'none';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ fontWeight: '800', fontSize: '0.92rem', color: '#1e293b', lineHeight: 1.3 }}>{s.name}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' }}>
-                    <span style={{ fontSize: '0.72rem', color: '#64748b', fontWeight: '700' }}>{s.category}</span>
-                    <span style={{ color: '#2563eb', fontWeight: '800', fontSize: '1rem' }}>
-                      QR {getServicePrice(s, posExpress ? 'express' : 'normal').toFixed(2)}
-                    </span>
+          {/* Ticket history */}
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 12px 0' }}>Ticket history</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '350px', overflowY: 'auto' }}>
+              {supportTickets.map(t => (
+                <div key={t.id} style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <strong>{t.subject}</strong>
+                    <span style={{ fontSize: '0.75rem', padding: '2px 6px', borderRadius: '4px', background: t.status === 'Open' ? '#fffbeb' : '#dcfce7', color: t.status === 'Open' ? '#b45309' : '#15803d' }}>{t.status}</span>
                   </div>
+                  <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{t.message}</p>
+                  
+                  {t.history && t.history.map((reply, idx) => (
+                    <div key={idx} style={{ marginTop: '8px', padding: '8px', background: '#eff6ff', borderRadius: '4px', fontSize: '0.8rem' }}>
+                      <strong>{reply.sender}:</strong> {reply.message}
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="pos-cart-panel" style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', overflow: 'hidden' }}>
-            <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>Manual Order Cart</h3>
-            
-            <select 
-              value={posCustId} 
-              onChange={(e) => setPosCustId(e.target.value)}
-              style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1.5px solid #cbd5e1', fontWeight: '600', fontSize: '0.88rem', outline: 'none', cursor: 'pointer', backgroundColor: '#f8fafc' }}
-            >
-              <option value="">👤 Walk-in / Guest Customer</option>
-              {db.customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name} (Balance: QR {c.walletBalance.toFixed(2)})</option>
-              ))}
-            </select>
+        </div>
+      )}
 
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', margin: '8px 0' }}>
-              {posCart.length === 0 ? (
-                <div style={{ margin: 'auto', textAlign: 'center', color: '#94a3b8', fontSize: '0.9rem' }}>
-                  <div style={{ fontSize: '2rem', marginBottom: '8px' }}>🛒</div>
-                  <div>Cart is empty</div>
-                </div>
-              ) : (
-                posCart.map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#1e293b' }}>{item.service.name}</div>
-                      <span style={{ 
-                        fontSize: '0.72rem', 
-                        fontWeight: '700', 
-                        padding: '2px 8px', 
-                        borderRadius: '12px',
-                        background: item.express ? '#ffe4e6' : '#f1f5f9',
-                        color: item.express ? '#e11d48' : '#475569',
-                        display: 'inline-block',
-                        marginTop: '4px'
-                      }}>
-                        {item.express ? '⚡ Express' : 'Normal'}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <button 
-                        onClick={() => handleUpdateCartQty(idx, -1)} 
-                        style={{ border: '1px solid #cbd5e1', background: '#f8fafc', width: '24px', height: '24px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800' }}
-                      >
-                        -
-                      </button>
-                      <span style={{ fontWeight: '800', fontSize: '0.9rem', minWidth: '18px', textAlign: 'center' }}>{item.qty}</span>
-                      <button 
-                        onClick={() => handleUpdateCartQty(idx, 1)} 
-                        style={{ border: '1px solid #cbd5e1', background: '#f8fafc', width: '24px', height: '24px', borderRadius: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800' }}
-                      >
-                        +
-                      </button>
-                      <button 
-                        onClick={() => handleRemoveCartItem(idx)} 
-                        style={{ color: '#ef4444', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1rem', marginLeft: '6px' }}
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
+      {/* ─── MODALS ──────────────────────────────────────────────────────────── */}
+
+      {/* ADD CUSTOMER MODAL (WIZARD OTP FLOW) */}
+      {addingCustomerStep > 0 && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Create Customer (Wizard Step {addingCustomerStep}/3)</h3>
+              <button onClick={() => setAddingCustomerStep(0)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
             </div>
 
-            {/* Customer Details Form shows when cart has items */}
-            {posCart.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '12px', flexShrink: 0 }}>
-                <h4 style={{ margin: '0 0 4px 0', fontSize: '0.88rem', fontWeight: '800', color: '#1e293b' }}>Customer Details</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Customer Name" 
-                    value={posCustName} 
-                    onChange={(e) => setPosCustName(e.target.value)} 
-                    style={{ padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="Phone Number" 
-                    value={posCustPhone} 
-                    onChange={(e) => setPosCustPhone(e.target.value)} 
-                    style={{ padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                  />
+            {/* Step 1: Inputs */}
+            {addingCustomerStep === 1 && (
+              <form onSubmit={handleCreateCustomerInputs} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Full Name *</label>
+                  <input type="text" required value={custName} onChange={e => setCustName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Address" 
-                    value={posCustAddress} 
-                    onChange={(e) => setPosCustAddress(e.target.value)} 
-                    style={{ padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                  />
-                  <input 
-                    type="email" 
-                    placeholder="Email Address" 
-                    value={posCustEmail} 
-                    onChange={(e) => setPosCustEmail(e.target.value)} 
-                    style={{ padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.82rem', outline: 'none' }}
-                  />
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Email Address *</label>
+                  <input type="email" required value={custEmail} onChange={e => setCustEmail(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
                 </div>
-              </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Phone *</label>
+                  <input type="text" required value={custPhone} onChange={e => setCustPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Address</label>
+                  <input type="text" value={custAddress} onChange={e => setCustAddress(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Next: Send OTP</button>
+              </form>
             )}
 
-            <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', fontSize: '1.15rem', marginBottom: '16px', color: '#0f172a' }}>
-                <span>Total Amount:</span>
-                <span style={{ color: '#2563eb' }}>QR {getPOSCartTotal().toFixed(2)}</span>
-              </div>
-              
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-                {['Cash', 'Card', 'UPI', 'Wallet'].map(m => (
-                  <button 
-                    key={m}
-                    onClick={() => setPosPayMethod(m as any)}
-                    style={{ 
-                      flex: 1, 
-                      padding: '10px 0', 
-                      fontSize: '0.82rem', 
-                      fontWeight: '700',
-                      borderRadius: '8px',
-                      border: '1.5px solid',
-                      borderColor: posPayMethod === m ? '#2563eb' : '#cbd5e1',
-                      background: posPayMethod === m ? '#eff6ff' : '#ffffff',
-                      color: posPayMethod === m ? '#2563eb' : '#475569',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s'
-                    }}
-                  >
-                    {m}
-                  </button>
-                ))}
-              </div>
+            {/* Step 2: OTP Verification */}
+            {addingCustomerStep === 2 && (
+              <form onSubmit={handleVerifyCustomerOtp} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={{ fontSize: '0.85rem', color: '#475569' }}>A verification OTP has been sent via Super Admin's Centralized Notification service to <strong>{custEmail}</strong>.</p>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Enter OTP Code (Demo Hint: Use 1234)</label>
+                  <input type="text" required value={custOtp} onChange={e => setCustOtp(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', textAlign: 'center', fontSize: '1.25rem', letterSpacing: '4px', fontWeight: '800' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Verify OTP Code</button>
+              </form>
+            )}
 
-              <button 
-                onClick={handleCheckoutPOS}
-                disabled={posCart.length === 0}
-                style={{ 
-                  width: '100%', 
-                  justifyContent: 'center', 
-                  height: '46px', 
-                  background: posCart.length === 0 ? '#cbd5e1' : 'linear-gradient(135deg, #2563eb, #1d4ed8)', 
-                  color: 'white', 
-                  border: 'none',
-                  borderRadius: '10px',
-                  fontWeight: '800',
-                  fontSize: '0.95rem',
-                  cursor: posCart.length === 0 ? 'not-allowed' : 'pointer',
-                  boxShadow: posCart.length === 0 ? 'none' : '0 4px 12px rgba(37,99,235,0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  transition: 'all 0.2s'
-                }}
-              >
-                Place Order & Print Invoice
-              </button>
-            </div>
-          </div>
-
-        </div>
-      )}
-
-      {activeModule === 'manual-orders-list' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Header Row with Search */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: 0, fontWeight: '800', color: '#0f172a', fontSize: '1.1rem' }}>Manual Order Entries</h3>
-            <input 
-              type="text" 
-              placeholder="Search by Order ID or Customer Name..." 
-              value={ordersSearch} 
-              onChange={(e) => setOrdersSearch(e.target.value)} 
-              style={{ padding: '10px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', outline: 'none', width: '320px', fontSize: '0.88rem' }}
-            />
-          </div>
-
-          {/* Orders Table Card */}
-          <div className="card-premium" style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', padding: '0 20px' }}>
-            <div className="table-responsive" style={{ overflowX: 'auto' }}>
-              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left' }}>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Order ID</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Customer</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Date</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Items & Description</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Amount</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Payment</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Status</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {db.orders
-                    .filter(o => o.isManual)
-                    .filter(o => {
-                      const s = ordersSearch.toLowerCase();
-                      return o.id.toLowerCase().includes(s) || o.customerName.toLowerCase().includes(s);
-                    })
-                    .map(o => (
-                      <tr key={o.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '16px 12px', fontWeight: '700', color: '#2563eb', whiteSpace: 'nowrap' }}>#{o.id}</td>
-                        <td style={{ padding: '16px 12px', fontWeight: '600', color: '#1e293b' }}>
-                          <div>{o.customerName}</div>
-                          {o.phone && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {o.phone}</span>}
-                        </td>
-                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{o.date}</td>
-                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem' }}>{o.weightItems}</td>
-                        <td style={{ padding: '16px 12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                        <td style={{ padding: '16px 12px', fontSize: '0.85rem' }}>
-                          <span style={{ 
-                            padding: '4px 8px', 
-                            borderRadius: '6px', 
-                            fontWeight: '700',
-                            background: o.paymentMethod === 'Cash' ? '#ecfdf5' : o.paymentMethod === 'Wallet' ? '#eff6ff' : '#f8fafc',
-                            color: o.paymentMethod === 'Cash' ? '#059669' : o.paymentMethod === 'Wallet' ? '#2563eb' : '#475569',
-                            border: '1px solid',
-                            borderColor: o.paymentMethod === 'Cash' ? '#a7f3d0' : o.paymentMethod === 'Wallet' ? '#bfdbfe' : '#e2e8f0'
-                          }}>
-                            {o.paymentMethod}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 12px' }}>
-                          <span className={`status-pill ${o.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                            {o.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 12px', textAlign: 'center' }}>
-                          <button 
-                            onClick={() => setViewingOrder(o)}
-                            className="secondary-btn" 
-                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', fontWeight: '700' }}
-                          >
-                            👁️ View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  {db.orders.filter(o => o.isManual).length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                        <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>📄</div>
-                        <div style={{ fontWeight: '600' }}>No manual orders registered yet.</div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {/* Step 3: Password creation */}
+            {addingCustomerStep === 3 && (
+              <form onSubmit={handleCompleteCustomerSetup} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={{ fontSize: '0.85rem', color: '#475569' }}>Verification successful. Please configure a login password for the customer.</p>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Create Password</label>
+                  <input type="password" required value={custPass} onChange={e => setCustPass(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Complete Registration</button>
+              </form>
+            )}
           </div>
         </div>
       )}
 
-      {activeModule === 'express-wash' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Header Row with Search */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', background: 'white', padding: '16px 20px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-            <h3 style={{ margin: 0, fontWeight: '800', color: '#0f172a', fontSize: '1.1rem' }}>⚡ Express Wash Queue</h3>
-            <input 
-              type="text" 
-              placeholder="Search express orders..." 
-              value={ordersSearch} 
-              onChange={(e) => setOrdersSearch(e.target.value)} 
-              style={{ padding: '10px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', outline: 'none', width: '320px', fontSize: '0.88rem' }}
-            />
-          </div>
-
-          {/* Orders Table Card */}
-          <div className="card-premium" style={{ background: 'white', borderRadius: '16px', border: '1px solid #e2e8f0', overflow: 'hidden', padding: '0 20px' }}>
-            <div className="table-responsive" style={{ overflowX: 'auto' }}>
-              <table className="admin-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #f1f5f9', textAlign: 'left' }}>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Order ID</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Customer</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Date</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Items & Description</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Amount</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Assigned Courier</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase' }}>Status</th>
-                    <th style={{ padding: '16px 12px', fontSize: '0.85rem', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', textAlign: 'center' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {db.orders
-                    .filter(o => o.planType?.toLowerCase() === 'express')
-                    .filter(o => {
-                      const s = ordersSearch.toLowerCase();
-                      return o.id.toLowerCase().includes(s) || o.customerName.toLowerCase().includes(s);
-                    })
-                    .map(o => (
-                      <tr key={o.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '16px 12px', fontWeight: '700', color: '#dc2626', whiteSpace: 'nowrap' }}>⚡ #{o.id}</td>
-                        <td style={{ padding: '16px 12px', fontWeight: '600', color: '#1e293b' }}>
-                          <div>{o.customerName}</div>
-                          {o.phone && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>📞 {o.phone}</span>}
-                        </td>
-                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>{o.date}</td>
-                        <td style={{ padding: '16px 12px', color: '#475569', fontSize: '0.85rem' }}>{o.weightItems || 'Express Package'}</td>
-                        <td style={{ padding: '16px 12px', fontWeight: '800', color: '#0f172a', whiteSpace: 'nowrap' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</td>
-                        <td style={{ padding: '16px 12px', fontSize: '0.85rem' }}>
-                          {o.courier ? (
-                            <span style={{ fontWeight: '600', color: '#1e293b' }}>👤 {o.courier}</span>
-                          ) : (
-                            <span style={{ color: '#ef4444', fontWeight: '700', background: '#fef2f2', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fee2e2' }}>Pending Assignment</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '16px 12px' }}>
-                          <span className={`status-pill ${o.status.toLowerCase().replace(/\s+/g, '-')}`}>
-                            {o.status}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 12px', textAlign: 'center' }}>
-                          <button 
-                            onClick={() => setViewingOrder(o)}
-                            className="secondary-btn" 
-                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', fontWeight: '700' }}
-                          >
-                            👁️ View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  {db.orders.filter(o => o.planType?.toLowerCase() === 'express').length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
-                        <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>⚡</div>
-                        <div style={{ fontWeight: '600' }}>No express orders currently in queue.</div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: VIEW / ASSIGN ORDER DETAILS --- */}
-      {viewingOrder && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '480px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
+      {/* CREATE CASHIER MODAL (OTP FLOW) */}
+      {addingCashierStep > 0 && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
             <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Operations Desk - Order Details</h3>
-              <p style={{ margin: '4px 0 0 0', opacity: 0.9, fontSize: '0.85rem' }}>Order ID: #{viewingOrder.id}</p>
-              <button onClick={() => setViewingOrder(null)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Create Cashier (Step {addingCashierStep}/3)</h3>
+              <button onClick={() => setAddingCashierStep(0)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
             </div>
-            
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'flex', gap: '20px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Customer</label>
-                  <div style={{ fontWeight: '700', fontSize: '1rem' }}>{viewingOrder.customerName}</div>
+
+            {addingCashierStep === 1 && (
+              <form onSubmit={e => handleCreateStaffInputs(e, 'cashier')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Full Name *</label>
+                  <input type="text" required value={staffName} onChange={e => setStaffName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
                 </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Amount</label>
-                  <div style={{ fontWeight: '700', color: '#2563eb', fontSize: '1.1rem' }}>QR {(viewingOrder.totalAmount || viewingOrder.total || 0).toFixed(2)}</div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Email Address *</label>
+                  <input type="email" required value={staffEmail} onChange={e => setStaffEmail(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Phone</label>
+                  <input type="text" value={staffPhone} onChange={e => setStaffPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Next: Send OTP</button>
+              </form>
+            )}
+
+            {addingCashierStep === 2 && (
+              <form onSubmit={e => handleVerifyStaffOtp(e, 'cashier')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={{ fontSize: '0.85rem' }}>OTP has been sent to <strong>{staffEmail}</strong>.</p>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Enter OTP Code (Demo Hint: Use 1234)</label>
+                  <input type="text" required value={staffOtp} onChange={e => setStaffOtp(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', textAlign: 'center', fontWeight: '800', letterSpacing: '4px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Verify OTP</button>
+              </form>
+            )}
+
+            {addingCashierStep === 3 && (
+              <form onSubmit={e => handleCompleteStaffSetup(e, 'cashier')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Create Password</label>
+                  <input type="password" required value={staffPass} onChange={e => setStaffPass(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Complete Setup</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CREATE DELIVERY STAFF MODAL (OTP FLOW) */}
+      {addingDeliveryStep > 0 && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Create Delivery Staff (Step {addingDeliveryStep}/3)</h3>
+              <button onClick={() => setAddingDeliveryStep(0)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            {addingDeliveryStep === 1 && (
+              <form onSubmit={e => handleCreateStaffInputs(e, 'delivery')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Full Name *</label>
+                  <input type="text" required value={staffName} onChange={e => setStaffName(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Email Address *</label>
+                  <input type="email" required value={staffEmail} onChange={e => setStaffEmail(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Phone</label>
+                  <input type="text" value={staffPhone} onChange={e => setStaffPhone(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Next: Send OTP</button>
+              </form>
+            )}
+
+            {addingDeliveryStep === 2 && (
+              <form onSubmit={e => handleVerifyStaffOtp(e, 'delivery')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <p style={{ fontSize: '0.85rem' }}>OTP has been sent to <strong>{staffEmail}</strong>.</p>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Enter OTP Code (Demo Hint: Use 1234)</label>
+                  <input type="text" required value={staffOtp} onChange={e => setStaffOtp(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', textAlign: 'center', fontWeight: '800', letterSpacing: '4px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Verify OTP</button>
+              </form>
+            )}
+
+            {addingDeliveryStep === 3 && (
+              <form onSubmit={e => handleCompleteStaffSetup(e, 'delivery')} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Create Password</label>
+                  <input type="password" required value={staffPass} onChange={e => setStaffPass(e.target.value)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                </div>
+                <button type="submit" style={{ padding: '10px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Complete Setup</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW ORDER TIMELINE MODAL */}
+      {viewingOrder && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '460px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Order status details timeline</h3>
+              <button onClick={() => setViewingOrder(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div><strong>Order ID:</strong> #{viewingOrder.id}</div>
+              <div><strong>Customer Name:</strong> {viewingOrder.customerName}</div>
+              <div><strong>Placing Date:</strong> {viewingOrder.date}</div>
+              <div><strong>payment status:</strong> {viewingOrder.paymentStatus}</div>
+              <div><strong>laundry timeline status:</strong> {viewingOrder.status}</div>
+
+              {/* Status Timeline visual */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', marginTop: '6px' }}>
+                <h4 style={{ margin: '0 0 10px 0' }}>Timeline History Progress</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem' }}>
+                  {[
+                    { label: 'Order Created', ok: true },
+                    { label: 'Accepted', ok: ['Accepted', 'Pickup Assigned', 'Picked Up', 'Received', 'Sorting', 'Washing', 'Drying', 'Ironing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Delivered'].includes(viewingOrder.status) },
+                    { label: 'Washing & Processing', ok: ['Washing', 'Drying', 'Ironing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Delivered'].includes(viewingOrder.status) },
+                    { label: 'Ready for Collection', ok: ['Ready', 'Out For Delivery', 'Delivered'].includes(viewingOrder.status) },
+                    { label: 'Delivered', ok: viewingOrder.status === 'Delivered' }
+                  ].map((step, idx) => (
+                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ color: step.ok ? '#16a34a' : '#94a3b8' }}>{step.ok ? '🟢' : '⚪'}</span>
+                      <span style={{ fontWeight: step.ok ? '700' : '400', color: step.ok ? '#0f172a' : '#64748b' }}>{step.label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
+              {/* Assign Pickup / Delivery agent */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>Assign Delivery Courier</label>
+                <select 
+                  value={viewingOrder.courier || ''} 
+                  onChange={e => handleAssignDeliveryBoy(viewingOrder.id, e.target.value)}
+                  style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}
+                >
+                  <option value="">Unassigned</option>
+                  {db.users.filter(u => u.role === 'delivery' && u.status !== 'Pending').map(u => (
+                    <option key={u.id} value={u.name}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '6px' }}>
+                <button onClick={() => setViewingOrder(null)} style={{ padding: '8px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW CUSTOMER PROFILE DETAILS */}
+      {viewingCustomer && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Customer Profile: {viewingCustomer.name}</h3>
+              <button onClick={() => setViewingCustomer(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div><strong>Name:</strong> {viewingCustomer.name}</div>
+              <div><strong>Email:</strong> {viewingCustomer.email}</div>
+              <div><strong>Phone:</strong> {viewingCustomer.phone}</div>
+              <div><strong>Address:</strong> {viewingCustomer.address}</div>
+              <div><strong>Wallet Balance:</strong> QR {viewingCustomer.walletBalance.toFixed(2)}</div>
+              <div><strong>Loyalty Points:</strong> {viewingCustomer.loyaltyPoints}</div>
+              <div><strong>Notes:</strong> {viewingCustomer.notes || 'None'}</div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setViewingCustomer(null)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Close Profile</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* WALLET ADJUSTMENT MODAL */}
+      {walletCust && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Adjust Wallet Balance</h3>
+              <button onClick={() => setWalletCust(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleAdjustWalletSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div><strong>Customer:</strong> {walletCust.name} (Current: QR {walletCust.walletBalance.toFixed(2)})</div>
               <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Garment Details</label>
-                <div style={{ fontWeight: '600', marginTop: '2px', color: '#1e293b' }}>{viewingOrder.weightItems}</div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '6px' }}>Adjustment Mode</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <label><input type="radio" checked={walletDir === 'in'} onChange={() => setWalletDir('in')} /> Add Funds (+)</label>
+                  <label><input type="radio" checked={walletDir === 'out'} onChange={() => setWalletDir('out')} /> Deduct Funds (-)</label>
+                </div>
               </div>
-
-              {viewingOrder.address && (
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Destination Address</label>
-                  <div style={{ fontWeight: '600', marginTop: '2px', color: '#ef4444' }}>📍 {viewingOrder.address}</div>
-                </div>
-              )}
-
-              {viewingOrder.phone && (
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Contact Number</label>
-                  <div style={{ fontWeight: '600', marginTop: '2px', color: '#3b82f6' }}>📞 {viewingOrder.phone}</div>
-                </div>
-              )}
-
               <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Status</label>
-                <div style={{ marginTop: '4px', display: 'flex', gap: '6px' }}>
-                  {db.activeRole === 'Delivery Boy' ? (
-                    <span style={{ 
-                      background: '#eff6ff', 
-                      color: '#2563eb', 
-                      border: '1px solid #bfdbfe',
-                      fontSize: '0.75rem', 
-                      fontWeight: '700', 
-                      padding: '5px 12px', 
-                      borderRadius: '20px',
-                      textTransform: 'capitalize',
-                      display: 'inline-block'
-                    }}>
-                      {viewingOrder.status === 'Received' ? 'Picked Up' : viewingOrder.status}
-                    </span>
-                  ) : (
-                    <select 
-                      value={viewingOrder.status}
-                      onChange={(e) => handleUpdateOrderStatus(viewingOrder.id, e.target.value as any, e.target.value)}
-                      style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Received">Picked Up</option>
-                      <option value="Washing">Washing</option>
-                      <option value="Ironing">Ironing</option>
-                      <option value="Ready">Ready</option>
-                      <option value="Out for Delivery">Out for Delivery</option>
-                      <option value="Delivered">Delivered</option>
-                      <option value="Cancelled">Cancelled</option>
-                    </select>
-                  )}
-                </div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '6px' }}>Amount (QR)</label>
+                <input type="number" required value={walletAmt} onChange={e => setWalletAmt(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
 
-              {db.activeRole !== 'Delivery Boy' && (
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setWalletCust(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: 'transparent', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Save adjustment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* LOYALTY POINTS ADJUSTMENT MODAL */}
+      {loyaltyCust && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Adjust Loyalty Points</h3>
+              <button onClick={() => setLoyaltyCust(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleAdjustLoyaltySubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div><strong>Customer:</strong> {loyaltyCust.name} (Current: {loyaltyCust.loyaltyPoints} points)</div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '6px' }}>Adjustment Mode</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <label><input type="radio" checked={loyaltyDir === 'add'} onChange={() => setLoyaltyDir('add')} /> Add Points</label>
+                  <label><input type="radio" checked={loyaltyDir === 'redeem'} onChange={() => setLoyaltyDir('redeem')} /> Redeem Points</label>
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '6px' }}>Points Amount</label>
+                <input type="number" required value={loyaltyPts} onChange={e => setLoyaltyPts(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setLoyaltyCust(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: 'transparent', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Save adjustment</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QR CODE POPUP */}
+      {qrCust && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '380px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #16a34a, #10b981)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Secure Customer QR Link</h3>
+              <button onClick={() => setQrCust(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+              <div style={{ width: '180px', height: '180px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '5rem', borderRadius: '12px' }}>
+                📱
+              </div>
+              <div style={{ textAlign: 'center', fontSize: '0.9rem' }}>
+                <strong>{qrCust.name}</strong>
+                <p style={{ margin: '4px 0 0 0', color: '#64748b' }}>Scan this QR code to automatically log in to the Customer Portal.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', width: '100%', marginTop: '8px' }}>
+                <button onClick={() => handleShareQR(qrCust)} style={{ flex: 1, padding: '10px', background: '#25d366', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Share to WhatsApp</button>
+                <button onClick={() => { navigator.clipboard.writeText(`http://localhost:5173/customer?login=${qrCust.id}`); alert('Link copied to clipboard!'); }} style={{ padding: '10px', background: '#e2e8f0', color: '#334155', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>🔗 Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD/EDIT SERVICE CATALOG MODAL */}
+      {(addingService || editingService) && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>{editingService ? 'Edit Catalog Service' : 'Add Catalog Service'}</h3>
+              <button onClick={() => { setAddingService(false); setEditingService(null); }} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleSaveService} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Service Name</label>
+                <input type="text" required value={sName} onChange={e => setSName(e.target.value)} placeholder="e.g. Wash & Fold Premium" style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                 <div>
-                  <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Assign Courier</label>
-                  <select 
-                    value={viewingOrder.courier || ''}
-                    onChange={(e) => handleUpdateOrderCourier(viewingOrder.id, e.target.value)}
-                    style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #cbd5e1', marginTop: '4px' }}
-                  >
-                    <option value="">-- Unassigned --</option>
-                    <option value="All">All Delivery Boys</option>
-                    {db.users.filter(u => u.role === 'delivery').map(u => (
-                      <option key={u.id} value={u.name}>{u.name}</option>
-                    ))}
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Category</label>
+                  <select value={sCategory} onChange={e => setSCategory(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }}>
+                    <option value="Wash & Fold">Wash & Fold</option>
+                    <option value="Dry Cleaning">Dry Cleaning</option>
                   </select>
                 </div>
-              )}
-
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', justifyContent: db.activeRole === 'Delivery Boy' ? 'flex-end' : 'space-between' }}>
-                {db.activeRole !== 'Delivery Boy' && (
-                  <button onClick={() => handleDeleteOrder(viewingOrder.id)} className="secondary-btn" style={{ borderColor: '#ef4444', color: '#ef4444', padding: '6px 12px' }}>
-                    Delete Order
-                  </button>
-                )}
-                <button onClick={() => setViewingOrder(null)} className="primary-btn" style={{ padding: '6px 16px' }}>
-                  Done
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: STAFF MANAGEMENT --- */}
-      {(addingUser || editingUser) && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>{addingUser ? 'Add Staff Member' : 'Edit Staff Member'}</h3>
-              <button onClick={() => { setAddingUser(false); setEditingUser(null); }} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            
-            <form onSubmit={addingUser ? handleCreateUser : handleSaveEditUser} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="form-group">
-                <label>Full Name</label>
-                <input type="text" value={uName} onChange={(e) => setUName(e.target.value)} className="form-input" required />
-              </div>
-              <div className="form-group">
-                <label>Role</label>
-                <select value={uRole} onChange={(e) => setURole(e.target.value as any)} className="form-input" required>
-                  <option value="admin">Admin</option>
-                  <option value="delivery">Delivery staff</option>
-                  <option value="cashier">Cashier</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Email Address</label>
-                <input type="email" value={uEmail} onChange={(e) => setUEmail(e.target.value)} className="form-input" required />
-              </div>
-              <div className="form-group">
-                <label>Phone</label>
-                <input type="text" value={uPhone} onChange={(e) => setUPhone(e.target.value)} className="form-input" />
-              </div>
-              <div className="form-group">
-                <label>Address</label>
-                <input type="text" value={uAddress} onChange={(e) => setUAddress(e.target.value)} className="form-input" />
-              </div>
-              {addingUser && (
-                <div className="form-group">
-                  <label>Login Password</label>
-                  <input type="password" value={uPassword} onChange={(e) => setUPassword(e.target.value)} className="form-input" placeholder="password" />
-                </div>
-              )}
-              
-              <button type="submit" className="primary-btn" style={{ width: '100%', justifyContent: 'center', height: '44px', background: '#2563eb', color: 'white', border: 'none' }}>
-                Save Profile
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: STAFF DETAILS VIEWER --- */}
-      {selectedUser && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>
-                {selectedUser.role === 'customer' ? 'Customer Profile Details' : 'Staff Profile Details'}
-              </h3>
-              <button onClick={() => setSelectedUser(null)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Full Name</label>
-                <div style={{ fontWeight: '600', fontSize: '1rem', marginTop: '2px' }}>{selectedUser.name}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Role</label>
-                <div style={{ fontWeight: '600', textTransform: 'capitalize', marginTop: '2px' }}>{selectedUser.role}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Email Address</label>
-                <div style={{ fontWeight: '600', marginTop: '2px' }}>{selectedUser.email}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Phone</label>
-                <div style={{ fontWeight: '600', marginTop: '2px' }}>{selectedUser.phone || 'N/A'}</div>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase' }}>Address</label>
-                <div style={{ fontWeight: '600', marginTop: '2px' }}>{selectedUser.address || 'N/A'}</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: SERVICES CATALOG --- */}
-      {(addingService || editingService) && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>{addingService ? 'Add Catalog Service' : 'Edit Catalog Service'}</h3>
-              <button onClick={() => { setAddingService(false); setEditingService(null); }} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            
-            <form onSubmit={addingService ? handleCreateService : handleSaveEditService} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="form-group">
-                <label>Service Name</label>
-                <input type="text" value={sName} onChange={(e) => setSName(e.target.value)} className="form-input" required />
-              </div>
-              <div className="form-group">
-                <label>Category</label>
-                <select value={sCategory} onChange={(e) => setSCategory(e.target.value)} className="form-input" required>
-                  <option value="Wash & Fold">Wash & Fold</option>
-                  <option value="Dry Cleaning">Dry Cleaning</option>
-                  <option value="Steam Press">Steam Press</option>
-                  <option value="Premium Services">Premium Services</option>
-                  <option value="Express Services">Express Services</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Base Price (QR)</label>
-                <input type="text" value={sPrice} onChange={(e) => setSPrice(e.target.value)} className="form-input" required />
-              </div>
-              <div className="form-group">
-                <label>Express Surcharge (%)</label>
-                <input type="number" value={sSurcharge} onChange={(e) => setSSurcharge(e.target.value)} className="form-input" required />
-              </div>
-              
-              <button type="submit" className="primary-btn" style={{ width: '100%', justifyContent: 'center', height: '44px', background: '#2563eb', color: 'white', border: 'none' }}>
-                Save Service
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: LOG EXPENSE --- */}
-      {addingExpense && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #ef4444, #f43f5e)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Log New Expense</h3>
-              <button onClick={() => setAddingExpense(false)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            
-            <form onSubmit={handleCreateExpense} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="form-group">
-                <label>Category</label>
-                <select value={eCategory} onChange={(e) => setECategory(e.target.value)} className="form-input" required>
-                  <option value="Chemicals & Detergents">Chemicals & Detergents</option>
-                  <option value="Machinery Rent/Repair">Machinery Rent/Repair</option>
-                  <option value="Logistics Fuel">Logistics Fuel</option>
-                  <option value="Marketing Promotions">Marketing Promotions</option>
-                  <option value="Utility Bills">Utility Bills</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Description Details</label>
-                <input type="text" value={eDesc} onChange={(e) => setEDesc(e.target.value)} className="form-input" required placeholder="Press safety latch fix..." />
-              </div>
-              <div className="form-group">
-                <label>Source Account</label>
-                <select value={eSource} onChange={(e) => setESource(e.target.value)} className="form-input" required>
-                  <option value="Drawer Cash">Drawer Cash</option>
-                  <option value="Bank Account">Bank Account</option>
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Expense Amount (QR)</label>
-                <input type="text" value={eAmount} onChange={(e) => setEAmount(e.target.value)} className="form-input" required placeholder="0.00" />
-              </div>
-              
-              <button type="submit" className="primary-btn" style={{ width: '100%', justifyContent: 'center', height: '44px', background: '#ef4444', color: 'white', border: 'none' }}>
-                Log Transaction
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: WALLET ADJUSTMENT --- */}
-      {adjustingWalletCust && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
-            <div style={{ background: 'linear-gradient(135deg, #2563eb, #7c3aed)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>Adjust Wallet Balance</h3>
-              <p style={{ margin: '4px 0 0 0', opacity: 0.9, fontSize: '0.85rem' }}>Customer: {adjustingWalletCust.name}</p>
-              <button onClick={() => setAdjustingWalletCust(null)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
-            </div>
-            
-            <form onSubmit={handleAdjustWallet} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="form-group">
-                <label>Adjustment Direction</label>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" onClick={() => setWalletDir('in')} className={`secondary-btn ${walletDir === 'in' ? 'active' : ''}`} style={{ flex: 1, padding: '8px 0' }}>Add Cash (Deposit)</button>
-                  <button type="button" onClick={() => setWalletDir('out')} className={`secondary-btn ${walletDir === 'out' ? 'active' : ''}`} style={{ flex: 1, padding: '8px 0' }}>Debit Cash (Withdraw)</button>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Price (QR)</label>
+                  <input type="number" required value={sPrice} onChange={e => setSPrice(e.target.value)} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
                 </div>
               </div>
-              <div className="form-group">
-                <label>Amount (QR)</label>
-                <input type="text" value={walletAmt} onChange={(e) => setWalletAmt(e.target.value)} className="form-input" required placeholder="0.00" />
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '16px', display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => { setAddingService(false); setEditingService(null); }} style={{ padding: '8px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: 'transparent', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Save Catalog</button>
               </div>
-              <button type="submit" className="primary-btn" style={{ width: '100%', justifyContent: 'center', height: '44px', background: '#2563eb', color: 'white', border: 'none' }}>
-                Save Transaction
-              </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL: INVOICE RECEIPT VIEWER --- */}
-      {activeReceipt && (
-        <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div className="modal-content receipt-modal" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: '24px', background: 'white' }}>
-            <div style={{ textAlign: 'center', borderBottom: '1px dashed #cbd5e1', paddingBottom: '16px', marginBottom: '16px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.6rem', color: '#1e40af', fontWeight: '800' }}>Laundra</h2>
-              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>Operations Desk Invoice</span>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Order ID:</span>
-                <strong style={{ color: '#0f172a' }}>#{activeReceipt.id}</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Date:</span>
-                <span>{activeReceipt.date}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Customer:</span>
-                <span>{activeReceipt.customerName}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Branch:</span>
-                <span>{activeReceipt.branch}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#64748b' }}>Payment Type:</span>
-                <span>{activeReceipt.paymentMethod}</span>
-              </div>
-              
-              <div style={{ borderTop: '1px dashed #cbd5e1', borderBottom: '1px dashed #cbd5e1', padding: '12px 0', margin: '8px 0', display: 'flex', justifyContent: 'space-between', fontWeight: '800', fontSize: '1.1rem', color: '#2563eb' }}>
-                <span>Grand Total:</span>
-                <span>QR {(activeReceipt.totalAmount || activeReceipt.total || 0).toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-              <button onClick={() => { if ((window as any).print) window.print(); }} className="secondary-btn" style={{ flex: 1, height: '40px', justifyContent: 'center' }}>Print Invoice</button>
-              <button onClick={() => setActiveReceipt(null)} className="primary-btn" style={{ flex: 1, height: '40px', justifyContent: 'center', background: '#2563eb', color: 'white', border: 'none' }}>Close</button>
-            </div>
           </div>
         </div>
       )}
