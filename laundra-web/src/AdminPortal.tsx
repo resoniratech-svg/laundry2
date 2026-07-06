@@ -45,6 +45,23 @@ export const AdminPortal: React.FC = () => {
     }
   }, [db.activeRole]);
 
+  // Drawer state
+  const [drawerTxs, setDrawerTxs] = useState<{ id: string; type: 'Cash In' | 'Cash Out' | 'Shift Open' | 'Shift Close'; amount: number; note: string; time: string }[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ll_cashier_drawer_txs') || '[]'); } catch { return []; }
+  });
+  const [txType, setTxType] = useState<'Cash In' | 'Cash Out' | 'Shift Open' | 'Shift Close'>('Cash In');
+  const [txAmount, setTxAmount] = useState('');
+  const [txNote, setTxNote] = useState('');
+  const [shiftOpen, setShiftOpen] = useState(() => localStorage.getItem('ll_cashier_shift') === 'open');
+
+  // Receipt printer target ref
+  const receiptRef = React.useRef<HTMLDivElement>(null);
+
+  // Sync drawer txs
+  useEffect(() => {
+    localStorage.setItem('ll_cashier_drawer_txs', JSON.stringify(drawerTxs));
+  }, [drawerTxs]);
+
   // ─── States ────────────────────────────────────────────────────────────────
   // Company Activity Logs
   const [activities, setActivities] = useState<CompanyActivity[]>(() => {
@@ -432,6 +449,10 @@ export const AdminPortal: React.FC = () => {
 
   const handleCheckoutPOS = () => {
     if (posCart.length === 0) return;
+    if (!shiftOpen) {
+      alert('Please open your drawer shift before processing orders.');
+      return;
+    }
 
     const currentMonth = new Date().toISOString().substring(0, 7);
     const monthlyOrdersCount = db.orders.filter(o => o.date.startsWith(currentMonth)).length;
@@ -470,13 +491,31 @@ export const AdminPortal: React.FC = () => {
       deliveryStatus: 'Received'
     };
 
+    // Log cash-in transaction
+    if (posPayMethod === 'Cash') {
+      const tx = {
+        id: 'tx-' + Date.now(),
+        type: 'Cash In' as const,
+        amount: total,
+        note: `Order #${newOrderId} — ${customerName}`,
+        time: new Date().toLocaleTimeString()
+      };
+      setDrawerTxs(prev => [tx, ...prev]);
+    }
+
     saveDB({
       orders: [...db.orders, newOrder],
-      customers: updatedCustomers
+      customers: updatedCustomers,
+      drawerCash: posPayMethod === 'Cash' ? db.drawerCash + total : db.drawerCash
     });
 
     addActivity('Order', `Created POS manual order #${newOrderId} for ${customerName}`);
     alert(`POS checkout complete. Order #${newOrderId} placed successfully!`);
+    
+    // Select order to print
+    setViewingOrder(newOrder);
+    setActiveModule('receipt');
+
     setPosCart([]);
     setPosCustId('');
     setPosCustName('');
@@ -650,6 +689,63 @@ export const AdminPortal: React.FC = () => {
     e.preventDefault();
     addActivity('Settings', 'Updated company config details');
     alert('Company settings saved successfully!');
+  };
+
+  // Drawer logging transaction
+  const handleDrawerTx = () => {
+    const amt = parseFloat(txAmount);
+    if (isNaN(amt) || amt <= 0) { alert('Please enter a valid cash amount.'); return; }
+    const tx = {
+      id: 'tx-' + Date.now(),
+      type: txType,
+      amount: amt,
+      note: txNote,
+      time: new Date().toLocaleTimeString()
+    };
+    setDrawerTxs(prev => [tx, ...prev]);
+
+    if (txType === 'Cash In' || txType === 'Shift Open') {
+      saveDB({ drawerCash: db.drawerCash + amt });
+    }
+    if (txType === 'Cash Out' || txType === 'Shift Close') {
+      saveDB({ drawerCash: Math.max(0, db.drawerCash - amt) });
+    }
+    if (txType === 'Shift Open') {
+      setShiftOpen(true);
+      localStorage.setItem('ll_cashier_shift', 'open');
+    }
+    if (txType === 'Shift Close') {
+      setShiftOpen(false);
+      localStorage.setItem('ll_cashier_shift', 'closed');
+    }
+    
+    addActivity('Payment', `Logged drawer cash transaction: ${txType} of QR ${amt}`);
+    setTxAmount('');
+    setTxNote('');
+  };
+
+  // Printing Simulated Thermal Receipt
+  const handlePrint = () => {
+    const content = receiptRef.current;
+    if (!content) return;
+    const win = window.open('', '_blank', 'width=400,height=600');
+    if (!win) return;
+    win.document.write(`
+      <html><head><title>Thermal Receipt Print</title>
+      <style>
+        body { font-family: 'Courier New', monospace; font-size: 13px; padding: 20px; }
+        h2 { text-align: center; font-size: 18px; margin-bottom: 4px; }
+        .divider { border-top: 1px dashed #000; margin: 8px 0; }
+        .row { display: flex; justify-content: space-between; }
+        .total { font-weight: bold; font-size: 15px; }
+        .center { text-align: center; }
+        .small { font-size: 11px; color: #555; }
+      </style></head><body>
+      ${content.innerHTML}
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
   };
 
   // Stats calculation
@@ -1121,6 +1217,136 @@ export const AdminPortal: React.FC = () => {
             </div>
 
           </div>
+        </div>
+      )}
+
+      {/* 💵 DRAWER & SHIFTS TAB */}
+      {activeModule === 'drawer' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: '24px' }}>
+          {/* Drawer form */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ background: 'linear-gradient(135deg, #059669, #10b981)', borderRadius: '16px', padding: '24px', color: 'white' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', opacity: 0.85, marginBottom: '8px' }}>Drawer Cash Balance</div>
+              <div style={{ fontSize: '2.2rem', fontWeight: '900' }}>QR {db.drawerCash.toFixed(2)}</div>
+              <div style={{ marginTop: '8px', fontSize: '0.85rem', opacity: 0.9 }}>
+                Shift status: {shiftOpen ? <span style={{ fontWeight: '700' }}>🟢 Open</span> : <span style={{ fontWeight: '700' }}>🔴 Closed</span>}
+              </div>
+            </div>
+
+            <div style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <h3 style={{ margin: 0, fontWeight: '800', color: '#0f172a', fontSize: '1rem' }}>💵 Log Transaction</h3>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Type</label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  {(['Cash In', 'Cash Out', 'Shift Open', 'Shift Close'] as const).map(t => (
+                    <button key={t} type="button" onClick={() => setTxType(t)} style={{
+                      padding: '9px', borderRadius: '8px', border: `2px solid ${txType === t ? '#2563eb' : '#e2e8f0'}`,
+                      background: txType === t ? '#eff6ff' : 'white', color: txType === t ? '#2563eb' : '#64748b',
+                      fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer'
+                    }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Amount (QR)</label>
+                <input type="number" min="0" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0.00"
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '6px', display: 'block' }}>Note</label>
+                <input value={txNote} onChange={e => setTxNote(e.target.value)} placeholder="Optional note..."
+                  style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <button type="button" onClick={handleDrawerTx} style={{ padding: '12px', borderRadius: '10px', border: 'none', background: 'linear-gradient(135deg, #2563eb, #7c3aed)', color: 'white', fontWeight: '800', cursor: 'pointer', fontSize: '0.95rem' }}>
+                Log Transaction
+              </button>
+            </div>
+          </div>
+
+          {/* Transaction log */}
+          <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ margin: 0, fontWeight: '800', color: '#0f172a', fontSize: '1.1rem' }}>Transaction Log</h3>
+            {drawerTxs.length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cbd5e1', fontSize: '0.95rem' }}>No transactions logged yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '500px', overflowY: 'auto' }}>
+                {drawerTxs.map(tx => {
+                  const isIn = tx.type === 'Cash In' || tx.type === 'Shift Open';
+                  return (
+                    <div key={tx.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1' }}>
+                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isIn ? '#ecfdf5' : '#fef2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
+                        {isIn ? '📥' : '📤'}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>{tx.type}</div>
+                        <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{tx.note || 'No note'} • {tx.time}</div>
+                      </div>
+                      <div style={{ fontWeight: '800', fontSize: '1rem', color: isIn ? '#16a34a' : '#ef4444' }}>
+                        {isIn ? '+' : '-'} QR {tx.amount.toFixed(2)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 🧾 RECEIPT PRINTER TAB */}
+      {activeModule === 'receipt' && (
+        <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1', maxWidth: '420px', margin: '0 auto' }}>
+          <h4 style={{ margin: '0 0 12px 0' }}>🧾 Simulated Thermal Print Receipt</h4>
+          
+          <div ref={receiptRef} style={{ padding: '20px', background: '#fff', border: '1px dashed #334155', fontFamily: "'Courier New', monospace", fontSize: '0.82rem', color: '#000' }}>
+            <h2 style={{ textAlign: 'center', margin: '0 0 4px 0', fontSize: '1.25rem', textTransform: 'uppercase' }}>LAUNDRA HQ</h2>
+            <div style={{ textAlign: 'center', fontSize: '0.75rem', marginBottom: '8px' }}>Downtown HQ, Branch A</div>
+            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+            
+            {viewingOrder ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Order ID:</span>
+                  <strong>#{viewingOrder.id}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Customer:</span>
+                  <strong>{viewingOrder.customerName}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Date:</span>
+                  <strong>{viewingOrder.date}</strong>
+                </div>
+                
+                <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+                
+                <div style={{ fontWeight: '700', marginBottom: '4px' }}>Items Summary:</div>
+                <div style={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap' }}>{viewingOrder.weightItems}</div>
+                
+                <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+                
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', fontSize: '1rem' }}>
+                  <span>GRAND TOTAL:</span>
+                  <span>QR {viewingOrder.totalAmount.toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginTop: '4px' }}>
+                  <span>Payment Mode:</span>
+                  <strong>{viewingOrder.paymentMethod} ({viewingOrder.paymentStatus || 'Paid'})</strong>
+                </div>
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#64748b' }}>No recent order checkout select. Please go to Today's Orders and click \"Receipt\" next to any booking to load.</div>
+            )}
+            
+            <div style={{ borderTop: '1px dashed #000', margin: '8px 0' }}></div>
+            <div style={{ textAlign: 'center', fontSize: '0.75rem' }}>Thank you for choosing Laundra!</div>
+          </div>
+          
+          {viewingOrder && (
+            <button onClick={handlePrint} style={{ width: '100%', padding: '12px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '800', cursor: 'pointer', marginTop: '16px' }}>
+              🖨️ Print Thermal Receipt
+            </button>
+          )}
         </div>
       )}
 

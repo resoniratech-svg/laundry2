@@ -67,7 +67,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
       return ['orders'].includes(moduleId);
     }
     if (role === 'Cashier') {
-      return ['dashboard', 'customers', 'orders', 'payments', 'wallet-loyalty'].includes(moduleId);
+      return ['dashboard', 'pos', 'customers', 'orders', 'payments', 'wallet-loyalty', 'drawer', 'receipt'].includes(moduleId);
     }
 
     return true;
@@ -75,6 +75,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
 
   const titleMap: Record<string, string> = {
     'dashboard': 'Admin Dashboard',
+    'pos': 'POS / New Order',
     'customers': 'Customer Management',
     'cashiers': 'Cashier Management',
     'delivery-staff': 'Delivery Staff Management',
@@ -89,7 +90,9 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
     'reviews': 'Customer Reviews',
     'settings': 'Company Settings',
     'audit-logs': 'Audit Activity Logs',
-    'support': 'Platform Help & Support'
+    'support': 'Platform Help & Support',
+    'drawer': 'Drawer Shifts Management',
+    'receipt': 'Thermal Receipt Simulator'
   };
 
   const currentTitle = titleMap[activeModule] || 'Manager Desk';
@@ -97,6 +100,7 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
   // Sidebar tabs list matching exactly the required workflow
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
+    { id: 'pos', label: 'POS / New Order', icon: '🛒' },
     { id: 'customers', label: 'Customer Management', icon: '👥' },
     { id: 'cashiers', label: 'Cashier Management', icon: '💳' },
     { id: 'delivery-staff', label: 'Delivery Staff', icon: '🚚' },
@@ -105,6 +109,8 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
     { id: 'payments', label: 'Payments & Refunds', icon: '💰' },
     { id: 'coupons', label: 'Coupons Manager', icon: '🎁' },
     { id: 'wallet-loyalty', label: 'Wallet & Loyalty', icon: '💳' },
+    { id: 'drawer', label: 'Drawer & Shifts', icon: '💵' },
+    { id: 'receipt', label: 'Receipt Printer', icon: '🧾' },
     { id: 'expenses', label: 'Expenses Book', icon: '💸' },
     { id: 'reports', label: 'Business Reports', icon: '📊' },
     { id: 'notifications', label: 'Notification Center', icon: '✉️' },
