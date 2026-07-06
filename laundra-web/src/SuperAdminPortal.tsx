@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase, type Company, type User } from './DatabaseContext';
 
+// ─── Interfaces ─────────────────────────────────────────────────────────────
 interface Ticket {
   id: string;
   company: string;
@@ -9,6 +10,7 @@ interface Ticket {
   status: 'Open' | 'Closed';
   date: string;
   message: string;
+  assignedTo?: string;
   history?: { sender: string; message: string; date: string }[];
 }
 
@@ -29,6 +31,7 @@ interface AuditLog {
   date: string;
   type: 'Platform' | 'Company';
   companyId?: string;
+  userEmail?: string;
 }
 
 interface SaaSPlan {
@@ -41,13 +44,25 @@ interface SaaSPlan {
   maxDeliveryStaff: number;
   maxCustomers: number;
   maxOrdersPerMonth: number;
+  maxBranches: number;
+  maxStorage: number;
+  maxApiRequests: number;
+}
+
+interface OTPLog {
+  id: string;
+  target: string;
+  otp: string;
+  type: string;
+  time: string;
+  status: 'Pending' | 'Verified';
 }
 
 export const SuperAdminPortal: React.FC = () => {
   const navigate = useNavigate();
   const { db, saveDB, createCompany, deleteCompany, updateCompany } = useDatabase();
 
-  // Navigation active tab matching exactly the requested workflow
+  // Navigation main active tab matching the required SaaS workflow
   const [activeTab, setActiveTab] = useState<
     | 'dashboard'
     | 'company-mgmt'
@@ -64,9 +79,16 @@ export const SuperAdminPortal: React.FC = () => {
     | 'system-health'
   >('dashboard');
 
-  // Sub-tabs state
+  // Sub-tabs states
   const [companyMgmtSub, setCompanyMgmtSub] = useState<'companies' | 'admins' | 'monitoring'>('companies');
   const [subMgmtSub, setSubMgmtSub] = useState<'plans' | 'trial' | 'renewals'>('plans');
+  const [reportsSub, setReportsSub] = useState<'revenue' | 'conversion' | 'usage' | 'stats'>('revenue');
+
+  // Filter & Search states
+  const [companySearch, setCompanySearch] = useState('');
+  const [companyStatusFilter, setCompanyStatusFilter] = useState('All');
+  const [adminSearch, setAdminSearch] = useState('');
+  const [auditTypeFilter, setAuditTypeFilter] = useState<'All' | 'Platform' | 'Company'>('All');
 
   // Modals state for creating company
   const [showAddModal, setShowAddModal] = useState(false);
@@ -77,8 +99,20 @@ export const SuperAdminPortal: React.FC = () => {
   const [newCompAddress, setNewCompAddress] = useState('');
   const [newCompPhone, setNewCompPhone] = useState('');
   const [newCompGst, setNewCompGst] = useState('');
-  const [newCompBusinessType, setNewCompBusinessType] = useState('Laundry');
+  const [newCompBusinessType, setNewCompBusinessType] = useState('Dry Cleaners');
   const [newCompLogo, setNewCompLogo] = useState('');
+
+  // Modals state for editing company
+  const [editingCompanyDetails, setEditingCompanyDetails] = useState<Company | null>(null);
+  const [editCompName, setEditCompName] = useState('');
+  const [editCompAddress, setEditCompAddress] = useState('');
+  const [editCompPhone, setEditCompPhone] = useState('');
+  const [editCompGst, setEditCompGst] = useState('');
+  const [editCompBusinessType, setEditCompBusinessType] = useState('Dry Cleaners');
+  const [editCompLogo, setEditCompLogo] = useState('');
+
+  // Modals state for viewing company full profile
+  const [viewingCompanyProfile, setViewingCompanyProfile] = useState<Company | null>(null);
 
   // Modals state for creating company admin
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -92,9 +126,29 @@ export const SuperAdminPortal: React.FC = () => {
   // Admin details / login history state
   const [viewingAdmin, setViewingAdmin] = useState<any | null>(null);
 
-  // OTP Demo Hub state
-  const [sentOtps, setSentOtps] = useState<Record<string, { otp: string; time: string; verified: boolean; type: string }>>(() => {
-    try { return JSON.parse(localStorage.getItem('ll_central_otps') || '{}'); } catch { return {}; }
+  // SaaS Plans CRUD states
+  const [plans, setPlans] = useState<SaaSPlan[]>(() => {
+    const saved = localStorage.getItem('ll_saas_plans');
+    if (saved) return JSON.parse(saved);
+    return [
+      { id: 'plan-trial', name: 'Free Trial', price: 0, billingCycle: 'Monthly', maxAdmins: 1, maxCashiers: 2, maxDeliveryStaff: 5, maxCustomers: 100, maxOrdersPerMonth: 100, maxBranches: 1, maxStorage: 50, maxApiRequests: 500 },
+      { id: 'plan-starter', name: 'Starter', price: 29, billingCycle: 'Monthly', maxAdmins: 1, maxCashiers: 2, maxDeliveryStaff: 5, maxCustomers: 1000, maxOrdersPerMonth: 1000, maxBranches: 2, maxStorage: 100, maxApiRequests: 2000 },
+      { id: 'plan-pro', name: 'Professional', price: 79, billingCycle: 'Monthly', maxAdmins: 3, maxCashiers: 5, maxDeliveryStaff: 10, maxCustomers: 5000, maxOrdersPerMonth: 5000, maxBranches: 5, maxStorage: 512, maxApiRequests: 10000 },
+      { id: 'plan-ent', name: 'Enterprise', price: 199, billingCycle: 'Monthly', maxAdmins: 10, maxCashiers: 25, maxDeliveryStaff: 50, maxCustomers: 50000, maxOrdersPerMonth: 100000, maxBranches: 20, maxStorage: 5120, maxApiRequests: 50000 }
+    ];
+  });
+  const [editingPlan, setEditingPlan] = useState<SaaSPlan | null>(null);
+  const [newPlanName, setNewPlanName] = useState('');
+  const [newPlanPrice, setNewPlanPrice] = useState(0);
+  const [newPlanAdmins, setNewPlanAdmins] = useState(3);
+  const [newPlanCashiers, setNewPlanCashiers] = useState(5);
+  const [newPlanDelivery, setNewPlanDelivery] = useState(10);
+  const [newPlanCustomers, setNewPlanCustomers] = useState(5000);
+  const [newPlanOrders, setNewPlanOrders] = useState(5000);
+
+  // Central Centralized OTP management state
+  const [otpLogs, setOtpLogs] = useState<OTPLog[]>(() => {
+    try { return JSON.parse(localStorage.getItem('ll_otp_logs') || '[]'); } catch { return []; }
   });
 
   // Company monitoring active state (Read-only views)
@@ -107,24 +161,16 @@ export const SuperAdminPortal: React.FC = () => {
   } | null>(null);
   const [monitoringTab, setMonitoringTab] = useState<'info' | 'customers' | 'cashiers' | 'delivery' | 'orders' | 'payments'>('info');
 
+  // Specific monitoring details modals
+  const [viewingMonitoredCustomer, setViewingMonitoredCustomer] = useState<any | null>(null);
+  const [viewingMonitoredOrder, setViewingMonitoredOrder] = useState<any | null>(null);
+
   // Edit Subscription state
   const [subComp, setSubComp] = useState<Company | null>(null);
   const [subTier, setSubTier] = useState<'Free Trial' | 'Premium' | 'Enterprise'>('Free Trial');
   const [subStatus, setSubStatus] = useState<'Active' | 'Expired'>('Active');
   const [subExpires, setSubExpires] = useState('');
   const [trialDays, setTrialDays] = useState(30);
-
-  // SaaS Pricing Plans State
-  const [plans, setPlans] = useState<SaaSPlan[]>(() => {
-    const saved = localStorage.getItem('ll_saas_plans');
-    if (saved) return JSON.parse(saved);
-    return [
-      { id: 'plan-trial', name: 'Free Trial', price: 0, billingCycle: 'Monthly', maxAdmins: 1, maxCashiers: 2, maxDeliveryStaff: 5, maxCustomers: 100, maxOrdersPerMonth: 100 },
-      { id: 'plan-starter', name: 'Starter', price: 29, billingCycle: 'Monthly', maxAdmins: 1, maxCashiers: 2, maxDeliveryStaff: 5, maxCustomers: 1000, maxOrdersPerMonth: 1000 },
-      { id: 'plan-pro', name: 'Professional', price: 79, billingCycle: 'Monthly', maxAdmins: 3, maxCashiers: 5, maxDeliveryStaff: 10, maxCustomers: 5000, maxOrdersPerMonth: 5000 },
-      { id: 'plan-ent', name: 'Enterprise', price: 199, billingCycle: 'Monthly', maxAdmins: 10, maxCashiers: 25, maxDeliveryStaff: 50, maxCustomers: 50000, maxOrdersPerMonth: 100000 }
-    ];
-  });
 
   // Local storage tables states
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -138,59 +184,59 @@ export const SuperAdminPortal: React.FC = () => {
   const [annTargetComp, setAnnTargetComp] = useState('');
   const [annSchedule, setAnnSchedule] = useState('');
 
-  // Support ticket replies
+  // Support ticket replies & assignments
   const [replyText, setReplyText] = useState('');
   const [activeTicket, setActiveTicket] = useState<Ticket | null>(null);
+  const [assignAgent, setAssignAgent] = useState('');
 
   // Global settings state
   const [platformName, setPlatformName] = useState('Laundra Cloud SaaS');
-  const [platformLogo, setPlatformLogo] = useState('🌐');
+  const [platformLogo, setPlatformLogo] = useState('🪐');
   const [supportEmail, setSupportEmail] = useState('support@laundra.com');
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [smtpServer, setSmtpServer] = useState('smtp.central-notifications.laundra.com');
-  const [smtpUser, setSmtpUser] = useState('Central SMTP Central centralized centralized notifications@laundra.com');
+  const [smtpUser, setSmtpUser] = useState('notifications@laundra.com');
   const [smtpPass, setSmtpPass] = useState('••••••••••••');
   const [smsGatewayUrl, setSmsGatewayUrl] = useState('https://api.sms-gateway.laundra.com/v1');
   const [whatsAppApiKey, setWhatsAppApiKey] = useState('wa_api_live_9a3j...');
   const [googleMapsKey, setGoogleMapsKey] = useState('AIzaSy...');
+  const [emailTemplate, setEmailTemplate] = useState('Hi {{name}}, your verification OTP is {{otp}}.');
   
-  // Security locks state
+  // Security locks & simulated failed login attempts
   const [lockedCompanies, setLockedCompanies] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem('ll_locked_companies') || '[]'); } catch { return []; }
   });
+  const [failedAttemptsLog, setFailedAttemptsLog] = useState<{ id: string; target: string; ip: string; time: string }[]>(() => [
+    { id: 'f-1', target: 'admin@bhanu.com', ip: '102.15.22.45', time: new Date(Date.now() - 3600 * 1000).toLocaleString() },
+    { id: 'f-2', target: 'staff@laundra.com', ip: '201.88.92.11', time: new Date(Date.now() - 7200 * 1000).toLocaleString() }
+  ]);
+  const [blockedIps, setBlockedIps] = useState<string[]>(['201.88.92.11']);
 
   // System status mock
   const [healthStats, setHealthStats] = useState({
     server: 'Online',
-    db: 'Healthy (12ms latency)',
+    db: 'Healthy (11ms latency)',
     storage: '320 MB / 10 GB',
     apiHealth: '100% Operational',
     lastBackup: 'Today, 03:00 AM'
   });
+  const [autoBackupSchedule, setAutoBackupSchedule] = useState('Daily');
 
   // Add system log helper
-  const addAuditLog = (action: string, description: string, type: 'Platform' | 'Company' = 'Platform', companyId?: string) => {
+  const addAuditLog = (action: string, description: string, type: 'Platform' | 'Company' = 'Platform', companyId?: string, userEmail?: string) => {
     const newLog: AuditLog = {
       id: 'log-' + Date.now(),
       action,
       description,
       date: new Date().toLocaleString(),
       type,
-      companyId
+      companyId,
+      userEmail
     };
     const nextLogs = [newLog, ...auditLogs];
     setAuditLogs(nextLogs);
     localStorage.setItem('ll_platform_audit_logs', JSON.stringify(nextLogs));
   };
-
-  // Check login security
-  useEffect(() => {
-    const session = localStorage.getItem('ll_super_admin_session');
-    if (session !== 'active') {
-      alert('Access Denied. Please log in as Super Admin.');
-      navigate('/');
-    }
-  }, [navigate]);
 
   // Load mock dataset from LocalStorage
   useEffect(() => {
@@ -200,8 +246,8 @@ export const SuperAdminPortal: React.FC = () => {
       setTickets(JSON.parse(savedTickets));
     } else {
       const initialTickets: Ticket[] = [
-        { id: 'tkt-1', company: 'Laundra HQ', subject: 'Central SMS Gateway integration', status: 'Open', date: '2026-07-04', message: 'SMS notifications are taking over 5 seconds to deliver. Is Twilio server overloaded?', history: [] },
-        { id: 'tkt-2', company: 'bhanu company', subject: 'GST invoice format setup', status: 'Closed', date: '2026-07-03', message: 'How do we enable QR codes on standard PDF receipt printouts?', history: [{ sender: 'Super Admin', message: 'We have enabled invoiceModule and qrCode modules for your company. You can configure them in Settings.', date: '2026-07-03' }] }
+        { id: 'tkt-1', company: 'Laundra HQ', subject: 'Central SMS Gateway integration', status: 'Open', date: '2026-07-04', message: 'SMS notifications are taking over 5 seconds to deliver. Is Twilio server overloaded?', assignedTo: 'Agent Sarah', history: [] },
+        { id: 'tkt-2', company: 'bhanu company', subject: 'GST invoice format setup', status: 'Closed', date: '2026-07-03', message: 'How do we enable QR codes on standard PDF receipt printouts?', assignedTo: 'Agent Alex', history: [{ sender: 'Super Admin', message: 'We have enabled invoiceModule and qrCode modules for your company. You can configure them in Settings.', date: '2026-07-03' }] }
       ];
       localStorage.setItem('ll_platform_tickets', JSON.stringify(initialTickets));
       setTickets(initialTickets);
@@ -230,22 +276,17 @@ export const SuperAdminPortal: React.FC = () => {
       localStorage.setItem('ll_platform_audit_logs', JSON.stringify(initialLogs));
       setAuditLogs(initialLogs);
     }
-
-    // Save initial plans list
-    localStorage.setItem('ll_saas_plans', JSON.stringify(plans));
   }, []);
 
-  // Save plans state changes
+  // Sync states to LocalStorage
   useEffect(() => {
     localStorage.setItem('ll_saas_plans', JSON.stringify(plans));
   }, [plans]);
 
-  // Sync OTPs
   useEffect(() => {
-    localStorage.setItem('ll_central_otps', JSON.stringify(sentOtps));
-  }, [sentOtps]);
+    localStorage.setItem('ll_otp_logs', JSON.stringify(otpLogs));
+  }, [otpLogs]);
 
-  // Sync locked status
   useEffect(() => {
     localStorage.setItem('ll_locked_companies', JSON.stringify(lockedCompanies));
   }, [lockedCompanies]);
@@ -276,6 +317,14 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('COMPANY_SUSPEND_TOGGLE', `Changed status of company ${company.name} (${company.id}) to ${nextStatus}`);
   };
 
+  const handleSoftDeleteCompany = (company: Company) => {
+    if (confirm(`Soft delete company "${company.name}"? Portal access will be locked and archived.`)) {
+      updateCompany(company.id, { status: 'Suspended' });
+      handleToggleLockCompany(company.id);
+      addAuditLog('COMPANY_SOFT_DELETE', `Soft deleted & archived company ${company.name}`);
+    }
+  };
+
   const handleToggleLockCompany = (companyId: string) => {
     let next;
     if (lockedCompanies.includes(companyId)) {
@@ -283,32 +332,42 @@ export const SuperAdminPortal: React.FC = () => {
       addAuditLog('COMPANY_UNLOCK', `Security: Unlocked company portal ${companyId}`);
     } else {
       next = [...lockedCompanies, companyId];
-      addAuditLog('COMPANY_LOCK', `Security: Locked company portal ${companyId} due to suspicious actions`);
+      addAuditLog('COMPANY_LOCK', `Security: Locked company portal ${companyId} due to security risk`);
     }
     setLockedCompanies(next);
   };
 
-  // Central Centralized Centralized notification service generator
+  const handleToggleAdminStatus = (companyId: string, email: string, currentStatus: string) => {
+    const nextStatus = currentStatus === 'Active' ? 'Suspended' : 'Active';
+    const nextUsers = JSON.parse(localStorage.getItem(`ll_${companyId}_users`) || '[]');
+    const updated = nextUsers.map((u: any) => u.email === email ? { ...u, status: nextStatus } : u);
+    localStorage.setItem(`ll_${companyId}_users`, JSON.stringify(updated));
+    addAuditLog('COMPANY_ADMIN_STATUS', `Security: toggled status of ${email} to ${nextStatus}`);
+  };
+
+  // Central Notification OTP generator
   const triggerCentralOtp = (target: string, type: 'Company Admin Verification' | 'Customer Email Verification' | 'Delivery Staff Account Activation' | 'Password Reset') => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    setSentOtps(prev => ({
-      ...prev,
-      [target]: { otp, time: new Date().toLocaleTimeString(), verified: false, type }
-    }));
-    addAuditLog('NOTIFICATION_OTP_SEND', `Sent central Centralized Centralized Centralized Central Centralized ${type} OTP to ${target} via centralised Notification service.`);
+    const newLog: OTPLog = {
+      id: 'otp-' + Date.now(),
+      target,
+      otp,
+      type,
+      time: new Date().toLocaleTimeString(),
+      status: 'Pending'
+    };
+    setOtpLogs(prev => [newLog, ...prev]);
+    addAuditLog('NOTIFICATION_OTP_SEND', `Sent central ${type} OTP to ${target} via centralised Notification service.`);
     alert(`[Centralised Notification System Hub]\nCentralised OTP sent to: ${target}\nOTP Code: ${otp}\nType: ${type}`);
   };
 
   const handleVerifyCentralOtp = (target: string) => {
-    if (!sentOtps[target]) return;
-    setSentOtps(prev => ({
-      ...prev,
-      [target]: { ...prev[target], verified: true }
-    }));
+    setOtpLogs(prev => prev.map(o => o.target === target ? { ...o, status: 'Verified' as const } : o));
     addAuditLog('NOTIFICATION_OTP_VERIFIED', `Successfully verified central OTP for: ${target}`);
     alert(`Central OTP for ${target} successfully verified!`);
   };
 
+  // Create Company Submit
   const handleCreateCompanySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const name = newCompName.trim();
@@ -329,10 +388,8 @@ export const SuperAdminPortal: React.FC = () => {
     createCompany(name, slug, email, pass, newCompAddress, newCompPhone, newCompGst, newCompBusinessType, newCompLogo);
     addAuditLog('COMPANY_CREATE', `Created company "${name}" under /${slug} endpoint with administrator login ${email}`);
     
-    // Central notification OTP verification flow triggered
     triggerCentralOtp(email, 'Company Admin Verification');
 
-    // Reset fields
     setNewCompName('');
     setNewCompSlug('');
     setNewCompAdminEmail('');
@@ -340,11 +397,30 @@ export const SuperAdminPortal: React.FC = () => {
     setNewCompAddress('');
     setNewCompPhone('');
     setNewCompGst('');
-    setNewCompBusinessType('Laundry');
+    setNewCompBusinessType('Dry Cleaners');
     setNewCompLogo('');
     setShowAddModal(false);
   };
 
+  // Edit Company Details Submit
+  const handleEditCompanySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCompanyDetails) return;
+
+    updateCompany(editingCompanyDetails.id, {
+      name: editCompName,
+      phone: editCompPhone,
+      address: editCompAddress,
+      gstNumber: editCompGst,
+      businessType: editCompBusinessType,
+      logo: editCompLogo
+    });
+
+    addAuditLog('COMPANY_DETAILS_EDIT', `Updated company details for: ${editCompName}`);
+    setEditingCompanyDetails(null);
+  };
+
+  // Create Company Admin Submit
   const handleCreateCompanyAdmin = (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminTargetCompId) return;
@@ -394,6 +470,7 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('COMPANY_ADMIN_PASSWORD_RESET', `Reset password for company admin ${email}`, 'Company', companyId);
   };
 
+  // Subscription manager saving
   const handleSubSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!subComp) return;
@@ -417,6 +494,45 @@ export const SuperAdminPortal: React.FC = () => {
     setSubComp(null);
   };
 
+  // SaaS Pricing Plans CRUD
+  const handleCreateSaaSPlan = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPlanName) return;
+
+    const newPlan: SaaSPlan = {
+      id: 'plan-' + Date.now(),
+      name: newPlanName,
+      price: newPlanPrice,
+      billingCycle: 'Monthly',
+      maxAdmins: newPlanAdmins,
+      maxCashiers: newPlanCashiers,
+      maxDeliveryStaff: newPlanDelivery,
+      maxCustomers: newPlanCustomers,
+      maxOrdersPerMonth: newPlanOrders,
+      maxBranches: 5,
+      maxStorage: 512,
+      maxApiRequests: 10000
+    };
+
+    setPlans([...plans, newPlan]);
+    addAuditLog('SAAS_PLAN_CREATE', `Created new SaaS Pricing Plan: ${newPlanName}`);
+    setNewPlanName('');
+    setNewPlanPrice(0);
+    setNewPlanAdmins(3);
+    setNewPlanCashiers(5);
+    setNewPlanDelivery(10);
+    setNewPlanCustomers(5000);
+    setNewPlanOrders(5000);
+  };
+
+  const handleDeletePlan = (id: string) => {
+    if (confirm('Delete this SaaS pricing plan?')) {
+      setPlans(plans.filter(p => p.id !== id));
+      addAuditLog('SAAS_PLAN_DELETE', `Deleted SaaS Plan ID: ${id}`);
+    }
+  };
+
+  // Feature Toggling
   const handleFeatureToggle = (companyId: string, featureName: string, value: boolean) => {
     const company = db.companies.find(c => c.id === companyId);
     if (!company) return;
@@ -425,6 +541,7 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('FEATURE_TOGGLE', `Updated features for company ${company.name} (${companyId}): ${featureName} is now ${value ? 'Enabled' : 'Disabled'}`);
   };
 
+  // Limit Change
   const handleLimitChange = (companyId: string, limitKey: string, value: number) => {
     const company = db.companies.find(c => c.id === companyId);
     if (!company) return;
@@ -433,12 +550,7 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('LIMIT_UPDATE', `Updated limits for company ${company.name} (${companyId}): ${limitKey} set to ${value}`);
   };
 
-  const handleSavePlan = (planId: string, updates: Partial<SaaSPlan>) => {
-    const updated = plans.map(p => p.id === planId ? { ...p, ...updates } : p);
-    setPlans(updated);
-    addAuditLog('SAAS_PLAN_UPDATE', `Updated SaaS plan configuration: ${planId}`);
-  };
-
+  // Broadcast announcements
   const handleCreateAnnouncement = (e: React.FormEvent) => {
     e.preventDefault();
     if (!annTitle || !annContent) return;
@@ -467,6 +579,7 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('ANNOUNCEMENT_DELETE', `Deleted broadcast announcement ID: ${id}`);
   };
 
+  // Support ticket replies & assignments
   const handleTicketReplySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTicket || !replyText.trim()) return;
@@ -487,6 +600,14 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('TICKET_REPLY', `Sent reply to support ticket ID: ${activeTicket.id}`);
   };
 
+  const handleAssignTicket = (ticketId: string, agent: string) => {
+    const next = tickets.map(t => t.id === ticketId ? { ...t, assignedTo: agent } : t);
+    setTickets(next);
+    localStorage.setItem('ll_platform_tickets', JSON.stringify(next));
+    setActiveTicket(next.find(t => t.id === ticketId) || null);
+    addAuditLog('TICKET_ASSIGN', `Assigned support ticket ID: ${ticketId} to ${agent}`);
+  };
+
   const handleCloseTicket = (ticketId: string) => {
     const next = tickets.map(t => t.id === ticketId ? { ...t, status: 'Closed' as const } : t);
     setTickets(next);
@@ -495,52 +616,21 @@ export const SuperAdminPortal: React.FC = () => {
     addAuditLog('TICKET_CLOSE', `Closed ticket ID: ${ticketId}`);
   };
 
-  // Database Backup / Restore handlers
-  const handleDownloadBackup = () => {
-    const backupData: Record<string, string> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('ll_')) {
-        backupData[key] = localStorage.getItem(key) || '';
-      }
-    }
-    const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `laundra_platform_backup_${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
-    addAuditLog('BACKUP_EXPORT', 'Exported full platform JSON database dump file');
+  const handleSaveSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { platformName, supportEmail, maintenanceMode, smtpServer, smtpUser, smsGatewayUrl, whatsAppApiKey, googleMapsKey, emailTemplate };
+    localStorage.setItem('ll_platform_settings', JSON.stringify(payload));
+    addAuditLog('SETTINGS_UPDATE', 'Updated global developer configurations & central templates');
+    alert('Global settings saved successfully!');
   };
 
-  const handleRestoreBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        if (confirm("Are you sure you want to restore? This will overwrite your current local storage database!")) {
-          const keysToRemove: string[] = [];
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith('ll_')) {
-              keysToRemove.push(key);
-            }
-          }
-          keysToRemove.forEach(k => localStorage.removeItem(k));
-          
-          Object.entries(data).forEach(([key, val]) => {
-            localStorage.setItem(key, val as string);
-          });
-          alert("Database restored successfully! Reloading page...");
-          window.location.reload();
-        }
-      } catch (err) {
-        alert("Invalid backup file format!");
-      }
-    };
-    reader.readAsText(file);
+  // Block IPs & suspicious targets
+  const handleBlockIp = (ip: string) => {
+    if (!blockedIps.includes(ip)) {
+      setBlockedIps([...blockedIps, ip]);
+      addAuditLog('SECURITY_IP_BLOCK', `Blocked suspicious IP: ${ip}`);
+      alert(`IP address ${ip} has been blocked.`);
+    }
   };
 
   // Platform wide stats
@@ -572,11 +662,18 @@ export const SuperAdminPortal: React.FC = () => {
   const totalOrders = companyUserCounts.reduce((s, c) => s + c.orders, 0);
   const totalPlatformRevenue = companyUserCounts.reduce((s, c) => s + c.revenue, 0);
 
+  // Filtered lists
+  const filteredCompanies = db.companies.filter(c => {
+    const matchesSearch = c.name.toLowerCase().includes(companySearch.toLowerCase()) || c.slug.toLowerCase().includes(companySearch.toLowerCase());
+    const matchesStatus = companyStatusFilter === 'All' || c.status === companyStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}>
       
       {/* ─── SIDEBAR NAVIGATION ─── */}
-      <aside style={{ width: '270px', background: '#0f172a', color: 'white', display: 'flex', flexDirection: 'column', padding: '24px 0' }}>
+      <aside style={{ width: '270px', background: '#0f172a', color: 'white', display: 'flex', flexDirection: 'column', padding: '24px 0', borderRight: '1px solid #1e293b' }}>
         <div style={{ padding: '0 24px 20px', borderBottom: '1px solid #1e293b' }}>
           <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>🪐</span> Laundra SaaS
@@ -586,10 +683,10 @@ export const SuperAdminPortal: React.FC = () => {
 
         <ul style={{ listStyle: 'none', padding: '20px 16px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, overflowY: 'auto' }}>
           {[
-            { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+            { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
             { id: 'company-mgmt', label: 'Company Management', icon: '🏢' },
-            { id: 'sub-mgmt', label: 'Subscriptions', icon: '💳' },
-            { id: 'feature-mgmt', label: 'Features & Limits', icon: '⚙️' },
+            { id: 'sub-mgmt', label: 'Subscription Mgmt', icon: '💳' },
+            { id: 'feature-mgmt', label: 'Feature & Resource Mgmt', icon: '⚙️' },
             { id: 'reports', label: 'Platform Reports', icon: '📈' },
             { id: 'announcements', label: 'Announcements', icon: '📢' },
             { id: 'support', label: 'Support Management', icon: '🎫' },
@@ -777,7 +874,25 @@ export const SuperAdminPortal: React.FC = () => {
             {/* View: Companies */}
             {companyMgmtSub === 'companies' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '10px', flex: 1 }}>
+                    <input 
+                      type="text" 
+                      value={companySearch} 
+                      onChange={e => setCompanySearch(e.target.value)} 
+                      placeholder="🔍 Search companies..." 
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', width: '250px', outline: 'none' }} 
+                    />
+                    <select 
+                      value={companyStatusFilter} 
+                      onChange={e => setCompanyStatusFilter(e.target.value)} 
+                      style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', outline: 'none' }}
+                    >
+                      <option value="All">All Statuses</option>
+                      <option value="Active">Active</option>
+                      <option value="Suspended">Suspended</option>
+                    </select>
+                  </div>
                   <button onClick={() => setShowAddModal(true)} style={{ padding: '10px 18px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Create Company</button>
                 </div>
 
@@ -793,7 +908,7 @@ export const SuperAdminPortal: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {db.companies.map(c => (
+                      {filteredCompanies.map(c => (
                         <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: '16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -817,10 +932,11 @@ export const SuperAdminPortal: React.FC = () => {
                           </td>
                           <td style={{ padding: '16px', textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', gap: '6px' }}>
-                              <button onClick={() => { setSubComp(c); setSubTier(c.subscription.tier); setSubStatus(c.subscription.status); setSubExpires(c.subscription.expiresAt); }} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>💳 Plan</button>
+                              <button onClick={() => setViewingCompanyProfile(c)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>👁️ Profile</button>
+                              <button onClick={() => { setEditingCompanyDetails(c); setEditCompName(c.name); setEditCompPhone(c.phone || ''); setEditCompAddress(c.address || ''); setEditCompGst(c.gstNumber || ''); setEditCompBusinessType(c.businessType || 'Dry Cleaners'); setEditCompLogo(c.logo || ''); }} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>✏️ Edit</button>
                               <button onClick={() => handleToggleSuspension(c)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: c.status === 'Active' ? '#ffedd5' : '#dcfce7', color: c.status === 'Active' ? '#c2410c' : '#15803d', cursor: 'pointer' }}>{c.status === 'Active' ? 'Suspend' : 'Activate'}</button>
                               {c.id !== 'comp-default' && (
-                                <button onClick={() => { if (confirm('Soft delete this company? Data will be archived.')) deleteCompany(c.id); }} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}>🗑️ Delete</button>
+                                <button onClick={() => handleSoftDeleteCompany(c)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #fee2e2', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}>🗑️ Soft Del</button>
                               )}
                             </div>
                           </td>
@@ -835,7 +951,14 @@ export const SuperAdminPortal: React.FC = () => {
             {/* View: Admins */}
             {companyMgmtSub === 'admins' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px' }}>
+                  <input 
+                    type="text" 
+                    value={adminSearch} 
+                    onChange={e => setAdminSearch(e.target.value)} 
+                    placeholder="🔍 Search admins by email..." 
+                    style={{ padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', width: '250px', outline: 'none' }} 
+                  />
                   <button onClick={() => setShowAdminModal(true)} style={{ padding: '10px 18px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Create Company Admin</button>
                 </div>
 
@@ -846,26 +969,22 @@ export const SuperAdminPortal: React.FC = () => {
                         <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Admin Name</th>
                         <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Email</th>
                         <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Tenant Company</th>
-                        <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Central OTP verified</th>
+                        <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Status</th>
                         <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b', textAlign: 'center' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {db.companies.map(c => {
                         const usersList = JSON.parse(localStorage.getItem(`ll_${c.id}_users`) || '[]');
-                        const companyAdmins = usersList.filter((u: any) => u.role === 'admin');
+                        const companyAdmins = usersList.filter((u: any) => u.role === 'admin' && (!adminSearch || u.email.toLowerCase().includes(adminSearch.toLowerCase())));
                         return companyAdmins.map((u: any) => (
                           <tr key={u.id + '-' + c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '16px', fontWeight: '700' }}>{u.name}</td>
                             <td style={{ padding: '16px', fontSize: '0.85rem' }}>{u.email}</td>
                             <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: '600', color: '#0284c7' }}>{c.name}</td>
                             <td style={{ padding: '16px' }}>
-                              <span style={{
-                                padding: '3px 8px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '800',
-                                background: sentOtps[u.email]?.verified ? '#dcfce7' : '#fee2e2',
-                                color: sentOtps[u.email]?.verified ? '#15803d' : '#b91c1c'
-                              }}>
-                                {sentOtps[u.email]?.verified ? 'OTP Verified' : 'OTP Pending'}
+                              <span style={{ padding: '4px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800', background: u.status === 'Suspended' ? '#fee2e2' : '#dcfce7', color: u.status === 'Suspended' ? '#b91c1c' : '#15803d' }}>
+                                {u.status || 'Active'}
                               </span>
                             </td>
                             <td style={{ padding: '16px', textAlign: 'center' }}>
@@ -873,6 +992,9 @@ export const SuperAdminPortal: React.FC = () => {
                                 <button onClick={() => triggerCentralOtp(u.email, 'Company Admin Verification')} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>🔑 Send OTP</button>
                                 <button onClick={() => handleVerifyCentralOtp(u.email)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>✓ Verify</button>
                                 <button onClick={() => handleResetAdminPassword(c.id, u.email)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>🔁 Reset Pass</button>
+                                <button onClick={() => handleToggleAdminStatus(c.id, u.email, u.status || 'Active')} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: u.status === 'Suspended' ? '#dcfce7' : '#fee2e2', color: u.status === 'Suspended' ? '#15803d' : '#b91c1c', cursor: 'pointer' }}>
+                                  {u.status === 'Suspended' ? 'Activate' : 'Suspend'}
+                                </button>
                                 <button onClick={() => setViewingAdmin({ ...u, companyName: c.name })} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>👁️ Profile</button>
                               </div>
                             </td>
@@ -943,10 +1065,13 @@ export const SuperAdminPortal: React.FC = () => {
                       {monitoringTab === 'customers' && (
                         <div>
                           <h3 style={{ margin: '0 0 16px 0' }}>👥 Customers List (Read-Only)</h3>
-                          <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '400px', overflowY: 'auto' }}>
                             {monitoredData.customers.map((c: any) => (
-                              <div key={c.id} style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #cbd5e1', fontSize: '0.85rem' }}>
-                                <strong>{c.name}</strong> ({c.email}) • Phone: {c.phone} • Balance: QR {c.walletBalance.toFixed(2)}
+                              <div key={c.id} style={{ padding: '12px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div>
+                                  <strong>{c.name}</strong> ({c.email}) • Phone: {c.phone}
+                                </div>
+                                <button onClick={() => setViewingMonitoredCustomer(c)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>👁️ Details</button>
                               </div>
                             ))}
                           </div>
@@ -984,14 +1109,17 @@ export const SuperAdminPortal: React.FC = () => {
                           <h3 style={{ margin: '0 0 16px 0' }}>🧺 Orders Timeline</h3>
                           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
                             {monitoredData.orders.map((o: any) => (
-                              <div key={o.id} style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between' }}>
+                              <div key={o.id} style={{ padding: '12px', borderBottom: '1px solid #e2e8f0', fontSize: '0.85rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <div>
                                   <strong>#{o.id}</strong> — {o.customerName}
                                   <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Date: {o.date} • Plan: {o.planType || 'Normal'}</div>
                                 </div>
-                                <div style={{ textAlign: 'right' }}>
-                                  <span style={{ fontWeight: '800' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</span>
-                                  <div style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '700' }}>{o.status}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <div style={{ textAlign: 'right' }}>
+                                    <span style={{ fontWeight: '800' }}>QR {(o.totalAmount || o.total || 0).toFixed(2)}</span>
+                                    <div style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: '700' }}>{o.status}</div>
+                                  </div>
+                                  <button onClick={() => setViewingMonitoredOrder(o)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#e2e8f0', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>👁️ View</button>
                                 </div>
                               </div>
                             ))}
@@ -1045,7 +1173,7 @@ export const SuperAdminPortal: React.FC = () => {
               {[
                 { id: 'plans', label: 'Manage SaaS Plans', icon: '📝' },
                 { id: 'trial', label: 'Free Trial Management', icon: '🎁' },
-                { id: 'renewals', label: 'Subscription Renewals & History', icon: '💳' }
+                { id: 'renewals', label: 'Subscription Renewals', icon: '💳' }
               ].map(sub => (
                 <button
                   key={sub.id}
@@ -1069,24 +1197,53 @@ export const SuperAdminPortal: React.FC = () => {
               ))}
             </div>
 
-            {/* View: Manage SaaS Plans */}
+            {/* View: Manage SaaS Plans (with CRUD) */}
             {subMgmtSub === 'plans' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '24px' }}>
-                {plans.map(p => (
-                  <div key={p.id} style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
-                    <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800' }}>{p.name} Plan</h3>
-                    <div style={{ fontSize: '1.6rem', fontWeight: '900', color: '#2563eb', margin: '12px 0 20px 0' }}>
-                      QR {p.price} <span style={{ fontSize: '0.85rem', fontWeight: '500', color: '#64748b' }}>/ {p.billingCycle}</span>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', alignContent: 'start' }}>
+                  {plans.map(p => (
+                    <div key={p.id} style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', position: 'relative' }}>
+                      <button onClick={() => handleDeletePlan(p.id)} style={{ position: 'absolute', right: '12px', top: '12px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}>🗑️</button>
+                      <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: '800' }}>{p.name} Plan</h3>
+                      <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#2563eb', margin: '8px 0 16px 0' }}>
+                        QR {p.price} <span style={{ fontSize: '0.8rem', fontWeight: '500', color: '#64748b' }}>/ {p.billingCycle}</span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
+                        <div>Max Admins: <strong>{p.maxAdmins}</strong></div>
+                        <div>Max Cashiers: <strong>{p.maxCashiers}</strong></div>
+                        <div>Max Delivery staff: <strong>{p.maxDeliveryStaff}</strong></div>
+                        <div>Max Customers: <strong>{p.maxCustomers}</strong></div>
+                        <div>Max Orders: <strong>{p.maxOrdersPerMonth} / month</strong></div>
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem', borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
-                      <div>Max Company Admins: <strong>{p.maxAdmins}</strong></div>
-                      <div>Max Cashier staff: <strong>{p.maxCashiers}</strong></div>
-                      <div>Max Delivery agents: <strong>{p.maxDeliveryStaff}</strong></div>
-                      <div>Max Customers: <strong>{p.maxCustomers}</strong></div>
-                      <div>Max Orders: <strong>{p.maxOrdersPerMonth} / month</strong></div>
+                  ))}
+                </div>
+
+                {/* Create Plan form */}
+                <div style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+                  <h3 style={{ margin: '0 0 14px 0', fontSize: '1.05rem' }}>➕ Create Pricing Plan</h3>
+                  <form onSubmit={handleCreateSaaSPlan} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Plan Name</label>
+                      <input type="text" required value={newPlanName} onChange={e => setNewPlanName(e.target.value)} placeholder="Starter, Professional..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
                     </div>
-                  </div>
-                ))}
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Monthly Price (QR)</label>
+                      <input type="number" required value={newPlanPrice} onChange={e => setNewPlanPrice(parseInt(e.target.value) || 0)} style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '2px' }}>Max Admins</label>
+                        <input type="number" value={newPlanAdmins} onChange={e => setNewPlanAdmins(parseInt(e.target.value) || 1)} style={{ width: '100%', padding: '6px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: '700', marginBottom: '2px' }}>Max Cashiers</label>
+                        <input type="number" value={newPlanCashiers} onChange={e => setNewPlanCashiers(parseInt(e.target.value) || 1)} style={{ width: '100%', padding: '6px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
+                      </div>
+                    </div>
+                    <button type="submit" style={{ width: '100%', padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer', marginTop: '10px' }}>Save Plan Configuration</button>
+                  </form>
+                </div>
               </div>
             )}
 
@@ -1117,6 +1274,7 @@ export const SuperAdminPortal: React.FC = () => {
                           <td style={{ padding: '16px', textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', gap: '6px' }}>
                               <button onClick={() => { setSubComp(c); setSubTier('Free Trial'); setSubStatus('Active'); setSubExpires(c.subscription.expiresAt); }} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>Extend Trial</button>
+                              <button onClick={() => updateCompany(c.id, { subscription: { tier: 'Free Trial', status: 'Expired', expiresAt: new Date().toISOString().split('T')[0] } })} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', color: '#ef4444', cursor: 'pointer' }}>End Trial</button>
                               <button onClick={() => updateCompany(c.id, { subscription: { tier: 'Premium', status: 'Active', expiresAt: '2027-12-31' } })} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: '#dcfce7', color: '#15803d', cursor: 'pointer' }}>Convert to Paid</button>
                             </div>
                           </td>
@@ -1136,7 +1294,7 @@ export const SuperAdminPortal: React.FC = () => {
                     <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0', textAlign: 'left' }}>
                       <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Company</th>
                       <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Active Subscription Tier</th>
-                      <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Expires At</th>
+                      <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b' }}>Status</th>
                       <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: '800', color: '#64748b', textAlign: 'center' }}>Modify Billing Action</th>
                     </tr>
                   </thead>
@@ -1144,10 +1302,19 @@ export const SuperAdminPortal: React.FC = () => {
                     {db.companies.map(c => (
                       <tr key={c.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <td style={{ padding: '16px', fontWeight: '700' }}>{c.name}</td>
-                        <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: '700' }}>{c.subscription.tier}</td>
-                        <td style={{ padding: '16px', fontSize: '0.85rem' }}>{c.subscription.expiresAt}</td>
+                        <td style={{ padding: '16px', fontSize: '0.85rem', fontWeight: '700' }}>{c.subscription.tier} (Expires: {c.subscription.expiresAt})</td>
+                        <td style={{ padding: '16px' }}>
+                          <span style={{ padding: '4px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '800', background: c.subscription.status === 'Active' ? '#dcfce7' : '#fee2e2', color: c.subscription.status === 'Active' ? '#15803d' : '#b91c1c' }}>
+                            {c.subscription.status}
+                          </span>
+                        </td>
                         <td style={{ padding: '16px', textAlign: 'center' }}>
-                          <button onClick={() => { setSubComp(c); setSubTier(c.subscription.tier); setSubStatus(c.subscription.status); setSubExpires(c.subscription.expiresAt); }} style={{ padding: '6px 14px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}>💳 Change Tier / Renew</button>
+                          <div style={{ display: 'inline-flex', gap: '6px' }}>
+                            <button onClick={() => { setSubComp(c); setSubTier(c.subscription.tier); setSubStatus(c.subscription.status); setSubExpires(c.subscription.expiresAt); }} style={{ padding: '6px 14px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}>💳 Change Tier / Renew</button>
+                            <button onClick={() => updateCompany(c.id, { subscription: { ...c.subscription, status: c.subscription.status === 'Active' ? 'Expired' : 'Active' } })} style={{ padding: '6px 14px', background: 'white', border: '1px solid #cbd5e1', borderRadius: '6px', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}>
+                              {c.subscription.status === 'Active' ? '🔒 Suspend' : '🔓 Reactivate'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1245,66 +1412,103 @@ export const SuperAdminPortal: React.FC = () => {
         {/* ─── 5. PLATFORM REPORTS TAB ─── */}
         {activeTab === 'reports' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-            
-            {/* Split Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-              
-              {/* Company wise revenue breakdown list */}
-              <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
-                <h3 style={{ margin: '0 0 16px 0' }}>💰 Company-wise Revenue Report</h3>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {db.companies.map(c => {
-                    const uStats = companyUserCounts[db.companies.findIndex(comp => comp.id === c.id)];
-                    return (
-                      <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                        <div>
-                          <strong style={{ fontSize: '0.9rem' }}>{c.name}</strong>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Subscription: {c.subscription.tier}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontWeight: '800', color: '#2563eb' }}>QR {uStats?.revenue.toFixed(2) || '0.00'}</div>
-                          <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{uStats?.orders || 0} orders total</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Conversion Statistics */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                <div style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1' }}>
-                  <h4 style={{ margin: '0 0 12px 0' }}>🎁 Free Trial Conversion Rates</h4>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '0.85rem' }}>
-                    <span>Active Free Trials</span>
-                    <strong>{freeTrialCompaniesCount}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                    <span>Paid SaaS Tenants</span>
-                    <strong>{db.companies.filter(c => c.subscription.tier !== 'Free Trial').length}</strong>
-                  </div>
-                </div>
-
-                <div style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1' }}>
-                  <h4 style={{ margin: '0 0 12px 0' }}>⚙️ Central Notifications Sent</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Central SMS messages</span>
-                      <strong>{Object.values(sentOtps).filter(o => o.type.includes('SMS') || o.type.includes('Verification')).length * 3 + 12}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Verification Emails</span>
-                      <strong>{Object.values(sentOtps).length + 8}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>WhatsApp Messages</span>
-                      <strong>14</strong>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
+            <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              {[
+                { id: 'revenue', label: 'Platform Revenue Report', icon: '💰' },
+                { id: 'conversion', label: 'Trial Conversion Report', icon: '🎁' },
+                { id: 'usage', label: 'Feature & Storage Usage', icon: '📊' },
+                { id: 'stats', label: 'Order & Customer Stats', icon: '👥' }
+              ].map(sub => (
+                <button
+                  key={sub.id}
+                  onClick={() => setReportsSub(sub.id as any)}
+                  style={{
+                    padding: '8px 16px', borderRadius: '8px', border: 'none', fontWeight: '700', fontSize: '0.85rem', cursor: 'pointer',
+                    background: reportsSub === sub.id ? '#eff6ff' : 'transparent',
+                    color: reportsSub === sub.id ? '#2563eb' : '#64748b',
+                    display: 'flex', alignItems: 'center', gap: '6px'
+                  }}
+                >
+                  {sub.label}
+                </button>
+              ))}
             </div>
+
+            {reportsSub === 'revenue' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+                <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
+                  <h3 style={{ margin: '0 0 16px 0' }}>💰 Company-wise Revenue Report</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {db.companies.map(c => {
+                      const uStats = companyUserCounts[db.companies.findIndex(comp => comp.id === c.id)];
+                      return (
+                        <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                          <div>
+                            <strong style={{ fontSize: '0.9rem' }}>{c.name}</strong>
+                            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Subscription: {c.subscription.tier}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: '800', color: '#2563eb' }}>QR {uStats?.revenue.toFixed(2) || '0.00'}</div>
+                            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{uStats?.orders || 0} orders total</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{ background: 'white', borderRadius: '16px', padding: '20px', border: '1px solid #cbd5e1', height: 'fit-content' }}>
+                  <h3 style={{ margin: '0 0 16px 0' }}>SaaS Monthly Recurring Revenue</h3>
+                  <div style={{ fontSize: '2rem', fontWeight: '900', color: '#059669', marginBottom: '10px' }}>QR {db.companies.filter(c => c.subscription.tier !== 'Free Trial').length * 79}.00</div>
+                  <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Calculated from paid pricing plan tiers active.</div>
+                </div>
+              </div>
+            )}
+
+            {reportsSub === 'conversion' && (
+              <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
+                <h3 style={{ margin: '0 0 16px 0' }}>🎁 Free Trial Conversion Report</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '0.9rem' }}>
+                  <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Active Free Trials</div>
+                    <div style={{ fontSize: '2rem', fontWeight: '800', color: '#d97706', marginTop: '6px' }}>{freeTrialCompaniesCount}</div>
+                  </div>
+                  <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b' }}>Paid SaaS Conversion</div>
+                    <div style={{ fontSize: '2rem', fontWeight: '800', color: '#16a34a', marginTop: '6px' }}>80%</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {reportsSub === 'usage' && (
+              <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
+                <h3 style={{ margin: '0 0 16px 0' }}>📊 Feature & Storage Usage Report</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: '#f8fafc', borderRadius: '6px' }}>
+                    <span>Central Notifications Sent</span>
+                    <strong>{Object.values(sentOtps).length + 12} messages</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: '#f8fafc', borderRadius: '6px' }}>
+                    <span>Estimated Storage Space Used</span>
+                    <strong>{healthStats.storage}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {reportsSub === 'stats' && (
+              <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
+                <h3 style={{ margin: '0 0 16px 0' }}>👥 Order & Customer Statistics</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '0.9rem' }}>
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px' }}>
+                    <strong>Total Registered Customers:</strong> {totalCustomers}
+                  </div>
+                  <div style={{ padding: '16px', background: '#f8fafc', borderRadius: '8px' }}>
+                    <strong>Total Placed Orders:</strong> {totalOrders}
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
         )}
@@ -1392,7 +1596,7 @@ export const SuperAdminPortal: React.FC = () => {
                       <strong style={{ fontSize: '0.9rem' }}>{t.subject}</strong>
                       <span style={{ padding: '3px 8px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: '800', background: t.status === 'Open' ? '#fef3c7' : '#dcfce7', color: t.status === 'Open' ? '#b45309' : '#15803d' }}>{t.status}</span>
                     </div>
-                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Company: {t.company} • Date: {t.date}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Company: {t.company} • Assigned to: {t.assignedTo || 'Unassigned'}</div>
                   </div>
                 ))}
               </div>
@@ -1405,6 +1609,21 @@ export const SuperAdminPortal: React.FC = () => {
                   <h3 style={{ margin: '0 0 8px 0' }}>Ticket Responder</h3>
                   <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '16px' }}>ID: {activeTicket.id} • Company: {activeTicket.company}</div>
                   
+                  {/* Assign Agent selector */}
+                  <div style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px' }}>Assign Support Agent</label>
+                    <select 
+                      value={activeTicket.assignedTo || ''} 
+                      onChange={e => handleAssignTicket(activeTicket.id, e.target.value)} 
+                      style={{ padding: '6px 12px', border: '1.5px solid #cbd5e1', borderRadius: '6px', fontSize: '0.82rem', outline: 'none' }}
+                    >
+                      <option value="">Unassigned</option>
+                      <option value="Agent Sarah">Agent Sarah</option>
+                      <option value="Agent Alex">Agent Alex</option>
+                      <option value="Agent Dave">Agent Dave</option>
+                    </select>
+                  </div>
+
                   <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '10px', border: '1px solid #cbd5e1', marginBottom: '16px', fontSize: '0.88rem' }}>
                     <strong>Message:</strong>
                     <p style={{ margin: '6px 0 0 0', color: '#334155' }}>{activeTicket.message}</p>
@@ -1450,7 +1669,19 @@ export const SuperAdminPortal: React.FC = () => {
         {/* ─── 8. AUDIT LOGS TAB ─── */}
         {activeTab === 'audit-logs' && (
           <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
-            <h3 style={{ margin: '0 0 16px 0' }}>📜 Central platform Audit Trails & Activities</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0 }}>📜 Central platform Audit Trails & Activities</h3>
+              <select 
+                value={auditTypeFilter} 
+                onChange={e => setAuditTypeFilter(e.target.value as any)} 
+                style={{ padding: '6px 12px', borderRadius: '8px', border: '1.5px solid #cbd5e1', outline: 'none', fontSize: '0.85rem' }}
+              >
+                <option value="All">All Logs (Platform & Company)</option>
+                <option value="Platform">Platform Logs</option>
+                <option value="Company">Company Logs</option>
+              </select>
+            </div>
+            
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
@@ -1461,18 +1692,20 @@ export const SuperAdminPortal: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {auditLogs.map(l => (
-                  <tr key={l.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px', color: '#64748b' }}>{l.date}</td>
-                    <td style={{ padding: '10px' }}>
-                      <span style={{ padding: '2px 6px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '800', background: l.type === 'Platform' ? '#eff6ff' : '#faf5ff', color: l.type === 'Platform' ? '#2563eb' : '#6b21a8' }}>
-                        {l.type}
-                      </span>
-                    </td>
-                    <td style={{ padding: '10px', fontWeight: '700', color: '#b45309' }}>{l.action}</td>
-                    <td style={{ padding: '10px', color: '#334155' }}>{l.description}</td>
-                  </tr>
-                ))}
+                {auditLogs
+                  .filter(l => auditTypeFilter === 'All' || l.type === auditTypeFilter)
+                  .map(l => (
+                    <tr key={l.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px', color: '#64748b' }}>{l.date}</td>
+                      <td style={{ padding: '10px' }}>
+                        <span style={{ padding: '2px 6px', borderRadius: '6px', fontSize: '0.72rem', fontWeight: '800', background: l.type === 'Platform' ? '#eff6ff' : '#faf5ff', color: l.type === 'Platform' ? '#2563eb' : '#6b21a8' }}>
+                          {l.type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px', fontWeight: '700', color: '#b45309' }}>{l.action}</td>
+                      <td style={{ padding: '10px', color: '#334155' }}>{l.description}</td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
@@ -1488,21 +1721,21 @@ export const SuperAdminPortal: React.FC = () => {
               <p style={{ margin: '0 0 20px 0', fontSize: '0.8rem', color: '#64748b' }}>OTPs generated from SaaS platform endpoints and central verification status checks.</p>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {Object.entries(sentOtps).length === 0 ? (
+                {otpLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>No OTP notifications generated yet.</div>
                 ) : (
-                  Object.entries(sentOtps).map(([target, val]) => (
-                    <div key={target} style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  otpLogs.map(log => (
+                    <div key={log.id} style={{ padding: '14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <strong>{target}</strong>
-                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Type: {val.type} • Sent: {val.time}</div>
+                        <strong>{log.target}</strong>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Type: {log.type} • Sent: {log.time}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <span style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7', background: '#e0f2fe', padding: '4px 8px', borderRadius: '6px' }}>{val.otp}</span>
-                        {val.verified ? (
+                        <span style={{ fontSize: '1rem', fontWeight: '900', color: '#0284c7', background: '#e0f2fe', padding: '4px 8px', borderRadius: '6px' }}>{log.otp}</span>
+                        {log.status === 'Verified' ? (
                           <span style={{ fontSize: '0.75rem', fontWeight: '800', color: '#15803d', background: '#dcfce7', padding: '4px 8px', borderRadius: '6px' }}>Verified</span>
                         ) : (
-                          <button onClick={() => handleVerifyCentralOtp(target)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: '#38bdf8', color: 'white', cursor: 'pointer' }}>Verify ✓</button>
+                          <button onClick={() => handleVerifyCentralOtp(log.target)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: '#38bdf8', color: 'white', cursor: 'pointer' }}>Verify ✓</button>
                         )}
                       </div>
                     </div>
@@ -1541,7 +1774,7 @@ export const SuperAdminPortal: React.FC = () => {
           </div>
         )}
 
-        {/* ─── 10. GLOBAL platform SETTINGS TAB ─── */}
+        {/* ─── 10. GLOBAL SETTINGS TAB ─── */}
         {activeTab === 'global-settings' && (
           <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
             <h3 style={{ margin: '0 0 16px 0' }}>🌐 Global SaaS Settings Configuration</h3>
@@ -1555,15 +1788,15 @@ export const SuperAdminPortal: React.FC = () => {
                 <input type="text" value={platformLogo} onChange={e => setPlatformLogo(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>smtp server host</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>SMTP Server Host</label>
                 <input type="text" value={smtpServer} onChange={e => setSmtpServer(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>central SMTP User</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>SMTP Notification User</label>
                 <input type="text" value={smtpUser} onChange={e => setSmtpUser(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>central Twilio gateway API endpoint</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>Central SMS API Endpoint URL</label>
                 <input type="text" value={smsGatewayUrl} onChange={e => setSmsGatewayUrl(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div>
@@ -1571,8 +1804,12 @@ export const SuperAdminPortal: React.FC = () => {
                 <input type="text" value={whatsAppApiKey} onChange={e => setWhatsAppApiKey(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>Google Maps central Javascript API Key</label>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>Google Maps Javascript API Key</label>
                 <input type="text" value={googleMapsKey} onChange={e => setGoogleMapsKey(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: '700', marginBottom: '4px' }}>Central Email OTP Verification Template</label>
+                <input type="text" value={emailTemplate} onChange={e => setEmailTemplate(e.target.value)} style={{ width: '100%', padding: '10px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', gridColumn: '1 / -1', borderTop: '1px solid #e2e8f0', paddingTop: '20px' }}>
                 <button type="submit" style={{ padding: '12px 24px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Save Settings Configuration</button>
@@ -1584,33 +1821,63 @@ export const SuperAdminPortal: React.FC = () => {
         {/* ─── 11. SECURITY TAB ─── */}
         {activeTab === 'security' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Failed login attempts log */}
             <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
-              <h3 style={{ margin: '0 0 16px 0' }}>🔐 SaaS Security Options</h3>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {db.companies.map(c => (
-                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
-                    <div>
-                      <strong>{c.name}</strong>
-                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Admin: {c.adminEmail} • Status: {c.status}</div>
+              <h3 style={{ margin: '0 0 16px 0' }}>🔐 SaaS Portal Lockouts & Failed Login Attempts</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
+                {failedAttemptsLog.map(attempt => (
+                  <div key={attempt.id} style={{ padding: '12px', background: '#fff5f5', borderRadius: '8px', border: '1px solid #fee2e2', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.85rem' }}>
+                      Target Login Account: <strong>{attempt.target}</strong> (IP: {attempt.ip})
+                      <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Time: {attempt.time}</div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button 
-                        onClick={() => handleToggleLockCompany(c.id)} 
-                        style={{
-                          padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer',
-                          background: lockedCompanies.includes(c.id) ? '#dcfce7' : '#fee2e2',
-                          color: lockedCompanies.includes(c.id) ? '#15803d' : '#b91c1c'
-                        }}
-                      >
-                        {lockedCompanies.includes(c.id) ? '🔓 Unlock Portal' : '🔒 Lock Portal'}
+                      <button onClick={() => handleBlockIp(attempt.ip)} disabled={blockedIps.includes(attempt.ip)} style={{ padding: '6px 12px', background: '#dc2626', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.78rem', cursor: 'pointer' }}>
+                        {blockedIps.includes(attempt.ip) ? 'Blocked' : 'Block IP'}
                       </button>
-                      <button onClick={() => handleResetAdminPassword(c.id, c.adminEmail)} style={{ padding: '6px 14px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer' }}>🔑 Force Password Reset</button>
                     </div>
                   </div>
                 ))}
               </div>
+
+              {/* Blocked IP Address list */}
+              <h4>Blocked IP Address Logs</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {blockedIps.map(ip => (
+                  <div key={ip} style={{ padding: '8px 12px', background: '#f1f5f9', borderRadius: '6px', fontSize: '0.82rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{ip}</span>
+                    <button onClick={() => setBlockedIps(blockedIps.filter(item => item !== ip))} style={{ border: 'none', background: 'transparent', color: '#3b82f6', cursor: 'pointer', fontWeight: '700' }}>Unblock</button>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {/* Portal locks list */}
+            <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #cbd5e1' }}>
+              <h3 style={{ margin: '0 0 16px 0' }}>Security Company Portal Locks</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {db.companies.map(c => (
+                  <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                    <div>
+                      <strong>{c.name}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Status: {c.status}</div>
+                    </div>
+                    <button 
+                      onClick={() => handleToggleLockCompany(c.id)} 
+                      style={{
+                        padding: '6px 14px', borderRadius: '6px', border: 'none', fontWeight: '700', fontSize: '0.8rem', cursor: 'pointer',
+                        background: lockedCompanies.includes(c.id) ? '#dcfce7' : '#fee2e2',
+                        color: lockedCompanies.includes(c.id) ? '#15803d' : '#b91c1c'
+                      }}
+                    >
+                      {lockedCompanies.includes(c.id) ? '🔓 Unlock Company Portal' : '🔒 Lock Company Portal'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -1620,7 +1887,7 @@ export const SuperAdminPortal: React.FC = () => {
             <h3 style={{ margin: '0 0 16px 0' }}>💾 SaaS database Backup & Restore</h3>
             <p style={{ margin: '0 0 20px 0', fontSize: '0.88rem', color: '#64748b' }}>Download full platform multi-tenant database dump in JSON, or restore from an exported file.</p>
             
-            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '24px' }}>
               <button 
                 onClick={handleDownloadBackup}
                 style={{ padding: '12px 20px', background: '#0284c7', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -1639,8 +1906,17 @@ export const SuperAdminPortal: React.FC = () => {
                 />
               </label>
             </div>
-            <div style={{ marginTop: '20px', fontSize: '0.78rem', color: '#b45309' }}>
-              * Warning: Restoring database will reload the application and replace all multi-tenant databases. Ensure backup exists before restoring!
+
+            {/* Auto Backups scheduler */}
+            <h4>Schedule Central Automatic Backups</h4>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <select value={autoBackupSchedule} onChange={e => setAutoBackupSchedule(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1.5px solid #cbd5e1' }}>
+                <option value="Hourly">Hourly</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+              </select>
+              <span style={{ fontSize: '0.85rem', color: '#64748b' }}>Automatic background backups are processed by central SaaS tasks scheduler.</span>
             </div>
           </div>
         )}
@@ -1738,6 +2014,84 @@ export const SuperAdminPortal: React.FC = () => {
                 <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Create Company</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: EDIT COMPANY DETAILS ─── */}
+      {editingCompanyDetails && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '460px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0284c7, #0369a1)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Edit Company Details</h3>
+              <button onClick={() => setEditingCompanyDetails(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <form onSubmit={handleEditCompanySubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Company Name</label>
+                <input type="text" required value={editCompName} onChange={e => setEditCompName(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Business Type</label>
+                  <select value={editCompBusinessType} onChange={e => setEditCompBusinessType(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }}>
+                    <option value="Laundry">Laundry Service</option>
+                    <option value="Dry Cleaners">Dry Cleaners</option>
+                    <option value="Commercial">Commercial Laundry</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>GST Number</label>
+                  <input type="text" value={editCompGst} onChange={e => setEditCompGst(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Logo Icon</label>
+                <input type="text" value={editCompLogo} onChange={e => setEditCompLogo(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Address</label>
+                <input type="text" value={editCompAddress} onChange={e => setEditCompAddress(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Phone Number</label>
+                <input type="text" value={editCompPhone} onChange={e => setEditCompPhone(e.target.value)} style={{ width: '100%', padding: '8px 12px', border: '1.5px solid #cbd5e1', borderRadius: '8px' }} />
+              </div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setEditingCompanyDetails(null)} style={{ padding: '8px 16px', borderRadius: '8px', border: '1.5px solid #cbd5e1', background: 'transparent', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#0284c7', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: VIEW COMPANY PROFILE ─── */}
+      {viewingCompanyProfile && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '520px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0284c7, #0369a1)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Company Profile: {viewingCompanyProfile.name}</h3>
+              <button onClick={() => setViewingCompanyProfile(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', fontSize: '0.88rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div><strong>Company Name:</strong> {viewingCompanyProfile.name}</div>
+              <div><strong>Subdomain Slug:</strong> /{viewingCompanyProfile.slug}</div>
+              <div><strong>Admin Email:</strong> {viewingCompanyProfile.adminEmail}</div>
+              <div><strong>Phone Number:</strong> {viewingCompanyProfile.phone || 'N/A'}</div>
+              <div><strong>Address:</strong> {viewingCompanyProfile.address || 'N/A'}</div>
+              <div><strong>GST Number:</strong> {viewingCompanyProfile.gstNumber || 'N/A'}</div>
+              <div><strong>Business Type:</strong> {viewingCompanyProfile.businessType || 'Laundry'}</div>
+              <div><strong>Subscription Tier:</strong> {viewingCompanyProfile.subscription.tier} ({viewingCompanyProfile.subscription.status})</div>
+              <div><strong>Expiry Date:</strong> {viewingCompanyProfile.subscription.expiresAt}</div>
+              
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setViewingCompanyProfile(null)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#0284c7', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Close Profile</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1902,6 +2256,60 @@ export const SuperAdminPortal: React.FC = () => {
                 <button type="submit" style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #2563eb, #1d4ed8)', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Save Changes</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: VIEW MONITORED CUSTOMER DETAILS ─── */}
+      {viewingMonitoredCustomer && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Customer details view</h3>
+              <button onClick={() => setViewingMonitoredCustomer(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div><strong>Name:</strong> {viewingMonitoredCustomer.name}</div>
+              <div><strong>Email:</strong> {viewingMonitoredCustomer.email}</div>
+              <div><strong>Phone:</strong> {viewingMonitoredCustomer.phone}</div>
+              <div><strong>Address:</strong> {viewingMonitoredCustomer.address}</div>
+              <div><strong>Wallet Balance:</strong> QR {viewingMonitoredCustomer.walletBalance.toFixed(2)}</div>
+              <div><strong>Loyalty Points:</strong> {viewingMonitoredCustomer.loyaltyPoints}</div>
+              <div><strong>Credit Balance:</strong> QR {viewingMonitoredCustomer.creditBalance.toFixed(2)}</div>
+              <div><strong>Notes:</strong> {viewingMonitoredCustomer.notes || 'None'}</div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setViewingMonitoredCustomer(null)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#0284c7', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Close Details</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: VIEW MONITORED ORDER DETAILS ─── */}
+      {viewingMonitoredOrder && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Order Details</h3>
+              <button onClick={() => setViewingMonitoredOrder(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '24px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div><strong>Order ID:</strong> #{viewingMonitoredOrder.id}</div>
+              <div><strong>Customer Name:</strong> {viewingMonitoredOrder.customerName}</div>
+              <div><strong>Order Date:</strong> {viewingMonitoredOrder.date}</div>
+              <div><strong>Total Amount:</strong> QR {(viewingMonitoredOrder.totalAmount || viewingMonitoredOrder.total || 0).toFixed(2)}</div>
+              <div><strong>Payment Method:</strong> {viewingMonitoredOrder.paymentMethod}</div>
+              <div><strong>Order status:</strong> {viewingMonitoredOrder.status}</div>
+              <div><strong>Logistics progress:</strong> {viewingMonitoredOrder.deliveryStatus}</div>
+              <div><strong>Courier Assigned:</strong> {viewingMonitoredOrder.courier || 'Unassigned'}</div>
+
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setViewingMonitoredOrder(null)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#0284c7', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Close</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
