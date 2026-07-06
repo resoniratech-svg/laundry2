@@ -114,6 +114,7 @@ export const AdminPortal: React.FC = () => {
   const [posSearch, setPosSearch] = useState('');
   const [posCategory, setPosCategory] = useState('All');
   const [posExpress, setPosExpress] = useState(false);
+  const [posCommission, setPosCommission] = useState<string>('');
 
   // Service Forms
   const [addingService, setAddingService] = useState(false);
@@ -479,6 +480,8 @@ export const AdminPortal: React.FC = () => {
       }
     }
 
+    const commAmt = posPayMethod === 'Cash' ? parseFloat(posCommission) || 0 : 0;
+
     const newOrder: Order = {
       id: newOrderId,
       customerName,
@@ -488,7 +491,8 @@ export const AdminPortal: React.FC = () => {
       paymentMethod: posPayMethod,
       paymentStatus: posPayMethod === 'Wallet' ? 'Paid' : 'Unpaid',
       services: posCart.map(i => ({ serviceId: i.service.id, name: i.service.name, qty: i.qty, plan: i.express ? 'Express (+50%)' : 'Normal' })),
-      deliveryStatus: 'Received'
+      deliveryStatus: 'Received',
+      commission: commAmt
     };
 
     // Log cash-in transaction
@@ -509,7 +513,7 @@ export const AdminPortal: React.FC = () => {
       drawerCash: posPayMethod === 'Cash' ? db.drawerCash + total : db.drawerCash
     });
 
-    addActivity('Order', `Created POS manual order #${newOrderId} for ${customerName}`);
+    addActivity('Order', `Created POS manual order #${newOrderId} for ${customerName} (Commission: QR ${commAmt})`);
     alert(`POS checkout complete. Order #${newOrderId} placed successfully!`);
     
     // Select order to print
@@ -520,6 +524,7 @@ export const AdminPortal: React.FC = () => {
     setPosCustId('');
     setPosCustName('');
     setPosCustPhone('');
+    setPosCommission('');
   };
 
   // Coupons actions
@@ -1215,6 +1220,13 @@ export const AdminPortal: React.FC = () => {
                 </select>
                 <button onClick={handleCheckoutPOS} disabled={posCart.length === 0} style={{ padding: '10px', background: '#16a34a', color: 'white', border: 'none', borderRadius: '6px', fontWeight: '700', cursor: 'pointer' }}>Checkout</button>
               </div>
+
+              {posPayMethod === 'Cash' && (
+                <div style={{ marginTop: '12px', borderTop: '1px dashed #e2e8f0', paddingTop: '12px' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', marginBottom: '4px', color: '#475569', textTransform: 'uppercase' }}>Commission (QR)</label>
+                  <input type="number" min="0" step="0.01" value={posCommission} onChange={e => setPosCommission(e.target.value)} placeholder="Enter commission amount..." style={{ width: '100%', padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px', boxSizing: 'border-box' }} />
+                </div>
+              )}
             </div>
 
           </div>

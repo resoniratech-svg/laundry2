@@ -47,6 +47,7 @@ export interface Order {
   frequency?: 'One-time / Daily' | 'Monthly';
   clothesPerDay?: number;
   isManual?: boolean;
+  commission?: number;
 }
 
 export interface Expense {
