@@ -146,6 +146,12 @@ export const LandingPage: React.FC = () => {
       localStorage.removeItem('ll_active_delivery_boy');
       localStorage.setItem('ll_active_workspace', 'admin');
       navigate('/admin');
+    } else if (role === 'cashier') {
+      saveDB({ activeRole: 'Cashier', currentDeliveryBoy: null });
+      localStorage.setItem('ll_activerole', 'Cashier');
+      localStorage.removeItem('ll_active_delivery_boy');
+      localStorage.setItem('ll_active_workspace', 'admin');
+      navigate('/admin');
     } else if (role === 'delivery') {
       saveDB({ activeRole: 'Delivery Boy', currentDeliveryBoy: user.name });
       localStorage.setItem('ll_activerole', 'Delivery Boy');
@@ -804,6 +810,7 @@ export const LandingPage: React.FC = () => {
                   style={{ height: '48px', fontWeight: '600' }}
                 >
                   <option value="admin">Admin Portal</option>
+                  <option value="cashier">Cashier Portal</option>
                   <option value="delivery">Delivery Portal</option>
                   <option value="customer">Customer Portal</option>
                   <option value="superadmin">Super Admin Portal</option>
