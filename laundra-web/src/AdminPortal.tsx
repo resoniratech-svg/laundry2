@@ -1091,7 +1091,7 @@ export const AdminPortal: React.FC = () => {
                   <th style={{ padding: '12px' }}>Date</th>
                   <th style={{ padding: '12px' }}>Total Amount</th>
                   <th style={{ padding: '12px' }}>status</th>
-                  {db.activeRole !== 'Delivery Staff' && <th style={{ padding: '12px' }}>Assigned Courier</th>}
+                  {db.activeRole !== 'Delivery Staff' && db.activeRole !== 'Delivery Boy' && <th style={{ padding: '12px' }}>Assigned Courier</th>}
                   <th style={{ padding: '12px', textAlign: 'center' }}>Modify Status</th>
                 </tr>
               </thead>
@@ -1112,7 +1112,7 @@ export const AdminPortal: React.FC = () => {
                           color: o.status === 'Delivered' ? '#15803d' : o.status === 'Created' ? '#2563eb' : '#b45309'
                         }}>{o.status}</span>
                       </td>
-                      {db.activeRole !== 'Delivery Staff' && (
+                      {db.activeRole !== 'Delivery Staff' && db.activeRole !== 'Delivery Boy' && (
                         <td style={{ padding: '12px' }}>
                           <select
                             value={o.courier || ''}
