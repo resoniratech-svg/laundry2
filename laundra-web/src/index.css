@@ -724,11 +724,16 @@ h1, h2, h3, h4 {
   color: white;
   transform: translateY(-2px);
   box-shadow: 0 5px 16px rgba(0,0,0,0.18);
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
 }
 .pos-category-btn[data-category="All"].active           { background: linear-gradient(135deg, #0f172a, #334155); }
 .pos-category-btn[data-category="Wash & Fold"].active   { background: linear-gradient(135deg, #0ea5e9, #38bdf8); }
 .pos-category-btn[data-category="Dry Cleaning"].active  { background: linear-gradient(135deg, #7c3aed, #a78bfa); }
 .pos-category-btn[data-category="Steam Press"].active   { background: linear-gradient(135deg, #059669, #34d399); }
+.pos-category-btn[data-category="Steam Iron"].active    { background: linear-gradient(135deg, #059669, #34d399); }
+.pos-category-btn[data-category="Shoe Cleaning"].active { background: linear-gradient(135deg, #d97706, #fbbf24); }
+.pos-category-btn[data-category="Carpet Cleaning"].active { background: linear-gradient(135deg, #be185d, #f472b6); }
+.pos-category-btn[data-category="Blanket Cleaning"].active { background: linear-gradient(135deg, #0369a1, #38bdf8); }
 .pos-category-btn[data-category="Premium Services"].active { background: linear-gradient(135deg, #d97706, #fbbf24); }
 .pos-category-btn[data-category="Express Services"].active { background: linear-gradient(135deg, #dc2626, #f87171); }
 .pos-category-btn[data-category="Hotel Laundry"].active    { background: linear-gradient(135deg, #be185d, #f472b6); }

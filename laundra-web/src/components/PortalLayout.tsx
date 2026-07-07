@@ -244,6 +244,11 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
                     }}
                   >
                     <span>{item.icon}</span> <span>{item.label}</span>
+                    {item.id === 'delivery-staff' && db.users.filter(u => u.role === 'delivery' && u.status === 'Pending').length > 0 && (
+                      <span style={{ background: '#ef4444', color: 'white', borderRadius: '50%', width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.68rem', fontWeight: '800', marginLeft: 'auto' }}>
+                        {db.users.filter(u => u.role === 'delivery' && u.status === 'Pending').length}
+                      </span>
+                    )}
                   </li>
                 ))}
             </ul>

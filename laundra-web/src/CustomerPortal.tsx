@@ -460,6 +460,46 @@ export const CustomerPortal: React.FC = () => {
               )}
             </div>
 
+            {/* Notifications & Announcements Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+              
+              {/* Notifications Card */}
+              <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '20px' }}>
+                <h4 style={{ margin: '0 0 16px 0' }}>🔔 Live Notifications Feed</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto' }}>
+                  {db.notifications.length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.85rem', padding: '20px 0', textAlign: 'center' }}>No activity notifications yet.</div>
+                  ) : (
+                    db.notifications.map(n => (
+                      <div key={n.id} style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.82rem', color: '#334155', fontWeight: '600' }}>{n.text}</span>
+                        <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{n.time}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Announcements Card */}
+              <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', padding: '20px' }}>
+                <h4 style={{ margin: '0 0 16px 0' }}>📢 Active Company Announcements</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto' }}>
+                  {db.announcements.filter(a => a.targetAudience === 'All' || a.targetAudience === 'Customers').length === 0 ? (
+                    <div style={{ color: '#64748b', fontSize: '0.85rem', textAlign: 'center', padding: '20px 0' }}>No announcements active at the moment.</div>
+                  ) : (
+                    db.announcements.filter(a => a.targetAudience === 'All' || a.targetAudience === 'Customers').map(a => (
+                      <div key={a.id} style={{ background: '#faf5ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #ddd6fe', fontSize: '0.82rem' }}>
+                        <strong style={{ color: '#5b21b6' }}>{a.title}</strong>
+                        <p style={{ margin: '4px 0 0 0', color: '#475569' }}>{a.content}</p>
+                        <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '2px' }}>Posted: {a.date} | by {a.author}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+            </div>
+
           </div>
         )}
 
@@ -470,6 +510,7 @@ export const CustomerPortal: React.FC = () => {
               {categories.map((cat) => (
                 <button
                   key={cat}
+                  data-category={cat}
                   onClick={() => setSelectedCategory(cat)}
                   className={`pos-category-btn ${selectedCategory === cat ? 'active' : ''}`}
                   style={{ whiteSpace: 'nowrap', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600' }}
@@ -587,18 +628,41 @@ export const CustomerPortal: React.FC = () => {
 
         {/* 🎁 SPECIAL OFFERS TAB */}
         {activeTab === 'offers' && (
-          <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
-            <h4>🎁 Active Special Coupons & Promo Codes</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginTop: '16px' }}>
-              {db.promos.map(p => (
-                <div key={p.code} style={{ padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px' }}>
-                  <span style={{ fontSize: '0.72rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: '8px', fontWeight: '700' }}>COUPON</span>
-                  <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#1e3a8a', marginTop: '6px' }}>{p.code}</div>
-                  <div style={{ fontSize: '0.85rem', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>{p.description || 'Flat discount rates'}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>Value: {p.value}{p.type === 'Percentage' ? '%' : ' QR'} Off</div>
-                </div>
-              ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            
+            {/* Announcements Section */}
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+              <h4>📢 Active Announcements & Broadcasts</h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '16px' }}>
+                {db.announcements.filter(a => a.targetAudience === 'All' || a.targetAudience === 'Customers').length === 0 ? (
+                  <div style={{ color: '#64748b', fontSize: '0.85rem' }}>No company announcements active at this moment.</div>
+                ) : (
+                  db.announcements.filter(a => a.targetAudience === 'All' || a.targetAudience === 'Customers').map(a => (
+                    <div key={a.id} style={{ padding: '16px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '12px' }}>
+                      <strong style={{ color: '#7c3aed', fontSize: '1rem' }}>{a.title}</strong>
+                      <p style={{ margin: '6px 0 0 0', fontSize: '0.85rem', color: '#475569' }}>{a.content}</p>
+                      <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px' }}>Posted: {a.date} | by {a.author}</div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
+
+            {/* Coupons Section */}
+            <div style={{ background: 'white', borderRadius: '12px', padding: '24px', border: '1px solid #cbd5e1' }}>
+              <h4>🎁 Active Special Coupons & Promo Codes</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px', marginTop: '16px' }}>
+                {db.promos.map(p => (
+                  <div key={p.code} style={{ padding: '16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '12px' }}>
+                    <span style={{ fontSize: '0.72rem', background: '#2563eb', color: 'white', padding: '2px 8px', borderRadius: '8px', fontWeight: '700' }}>COUPON</span>
+                    <div style={{ fontSize: '1.2rem', fontWeight: '800', color: '#1e3a8a', marginTop: '6px' }}>{p.code}</div>
+                    <div style={{ fontSize: '0.85rem', color: '#1e40af', marginTop: '4px', fontWeight: '600' }}>{p.description || 'Flat discount rates'}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '6px' }}>Value: {p.value}{p.type === 'Percentage' ? '%' : ' QR'} Off</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -883,10 +947,17 @@ export const CustomerPortal: React.FC = () => {
             </div>
 
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div><strong>Status:</strong> {selectedOrder.status}</div>
+              <div><strong>Status:</strong> {selectedOrder.status} {selectedOrder.deliveryStatus && !['Pending Assignment', 'Received', 'Pending Pickup', 'Pending'].includes(selectedOrder.deliveryStatus) && ` - 🚚 ${selectedOrder.deliveryStatus}`}</div>
               <div><strong>Items:</strong> {selectedOrder.weightItems}</div>
               <div><strong>Total Amount:</strong> QR {selectedOrder.totalAmount.toFixed(2)}</div>
               <div><strong>Delivery agent:</strong> {selectedOrder.courier || 'Unassigned'}</div>
+              
+              {selectedOrder.deliveryStatus && ['Courier on the way', 'Reached Customer'].includes(selectedOrder.deliveryStatus) && (
+                <div style={{ background: '#eff6ff', padding: '10px 14px', borderRadius: '8px', border: '1px solid #bfdbfe', fontSize: '0.8rem', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                  <span>🚚</span>
+                  <span><strong>Live Courier Status:</strong> {selectedOrder.deliveryStatus}</span>
+                </div>
+              )}
               
               <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].map((st, idx) => {

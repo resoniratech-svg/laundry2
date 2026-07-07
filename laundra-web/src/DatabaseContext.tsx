@@ -42,6 +42,7 @@ export interface Order {
   deliveryStatus: string;
   phone?: string;
   address?: string;
+  email?: string;
   services?: any[];
   totalAmount: number;
   total?: number;
@@ -93,6 +94,10 @@ export interface User {
   vehicleNumber?: string;
   licenseNumber?: string;
   vehicleRc?: string;
+  insuranceNumber?: string;
+  emergencyContact?: string;
+  licenseFile?: string;
+  insuranceFile?: string;
 }
 
 export interface Company {
@@ -152,6 +157,26 @@ export interface Company {
   };
 }
 
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  date: string;
+  targetAudience: 'All' | 'Delivery Staff' | 'Customers';
+  author: string;
+}
+
+export interface LeaveRequest {
+  id: string;
+  deliveryBoyName: string;
+  deliveryBoyEmail: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  createdAt: string;
+}
+
 export interface Database {
   services: Service[];
   customers: Customer[];
@@ -166,6 +191,8 @@ export interface Database {
   currentDeliveryBoy: string | null;
   companies: Company[];
   activeCompanyId: string;
+  announcements: Announcement[];
+  leaveRequests: LeaveRequest[];
 }
 
 interface DatabaseContextType {
@@ -186,6 +213,8 @@ interface DatabaseContextType {
   deleteCompany: (companyId: string) => void;
   updateCompany: (companyId: string, updates: Partial<Company>) => void;
   changeActiveCompany: (companyId: string) => void;
+  setAnnouncements: (announcements: Announcement[]) => void;
+  setLeaveRequests: (leaveRequests: LeaveRequest[]) => void;
 }
 
 const DEFAULT_SERVICES: Service[] = [
@@ -378,6 +407,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeBranch, setActiveBranchState] = useState<string>('Downtown HQ');
   const [activeRole, setActiveRoleState] = useState<string>('Admin');
   const [currentDeliveryBoy, setCurrentDeliveryBoyState] = useState<string | null>(null);
+  const [announcements, setAnnouncementsState] = useState<Announcement[]>([]);
+  const [leaveRequests, setLeaveRequestsState] = useState<LeaveRequest[]>([]);
 
   // Wrapped setters that persist to local storage synchronously
   const setServices = (newVal: Service[]) => {
@@ -437,6 +468,16 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } else {
       localStorage.removeItem(`ll_${activeCompanyIdRef.current}_active_delivery_boy`);
     }
+  };
+
+  const setAnnouncements = (newVal: Announcement[]) => {
+    setAnnouncementsState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_announcements`, JSON.stringify(newVal));
+  };
+
+  const setLeaveRequests = (newVal: LeaveRequest[]) => {
+    setLeaveRequestsState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_leaveRequests`, JSON.stringify(newVal));
   };
 
   // Helper to load company data (with migration support for comp-default)
@@ -578,6 +619,35 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     // 11. Current Delivery Boy
     const cdbSaved = localStorage.getItem(`ll_${compId}_active_delivery_boy`);
     setCurrentDeliveryBoyState(cdbSaved || null);
+
+    // 12. Announcements
+    const annSaved = localStorage.getItem(`ll_${compId}_announcements`);
+    if (annSaved) {
+      setAnnouncementsState(JSON.parse(annSaved));
+    } else {
+      setAnnouncementsState([
+        {
+          id: 'ann-1',
+          title: '🔥 Eid Promotion Launching',
+          content: 'Eid Al-Fitr promotion discounts are live! Share coupons with clients.',
+          date: '2026-07-06',
+          targetAudience: 'All',
+          author: 'HQ Admin'
+        },
+        {
+          id: 'ann-2',
+          title: '📢 Safety Precautions for Couriers',
+          content: 'Kindly wear helmets and obey speed limits on deliveries.',
+          date: '2026-07-07',
+          targetAudience: 'Delivery Staff',
+          author: 'Operations Manager'
+        }
+      ]);
+    }
+
+    // 13. LeaveRequests
+    const lrSaved = localStorage.getItem(`ll_${compId}_leaveRequests`);
+    setLeaveRequestsState(lrSaved ? JSON.parse(lrSaved) : []);
   };
 
   // Sync companies list
@@ -590,6 +660,21 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     loadCompanyData(activeCompanyId);
   }, []);
 
+  // Listen for storage events to synchronize database across different tabs/portals
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith(`ll_${activeCompanyId}_`)) {
+        loadCompanyData(activeCompanyId);
+      }
+      if (e.key === 'll_companies') {
+        const saved = localStorage.getItem('ll_companies');
+        if (saved) setCompanies(JSON.parse(saved));
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [activeCompanyId]);
+
   // Tenant-switching function
   const changeActiveCompany = (companyId: string) => {
     // 1. Flush/save current company states
@@ -600,6 +685,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     localStorage.setItem(`ll_${activeCompanyId}_promos`, JSON.stringify(promos));
     localStorage.setItem(`ll_${activeCompanyId}_notifications`, JSON.stringify(notifications));
     localStorage.setItem(`ll_${activeCompanyId}_users`, JSON.stringify(users));
+    localStorage.setItem(`ll_${activeCompanyId}_announcements`, JSON.stringify(announcements));
+    localStorage.setItem(`ll_${activeCompanyId}_leaveRequests`, JSON.stringify(leaveRequests));
     localStorage.setItem(`ll_${activeCompanyId}_drawercash`, drawerCash.toString());
     localStorage.setItem(`ll_${activeCompanyId}_activebranch`, activeBranch);
     localStorage.setItem(`ll_${activeCompanyId}_activerole`, activeRole);
@@ -750,6 +837,8 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (fields.activeBranch !== undefined) setActiveBranch(fields.activeBranch);
     if (fields.activeRole !== undefined) setActiveRole(fields.activeRole);
     if (fields.currentDeliveryBoy !== undefined) setCurrentDeliveryBoy(fields.currentDeliveryBoy);
+    if (fields.announcements !== undefined) setAnnouncements(fields.announcements);
+    if (fields.leaveRequests !== undefined) setLeaveRequests(fields.leaveRequests);
   };
 
   const db: Database = {
@@ -765,7 +854,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     activeRole,
     currentDeliveryBoy,
     companies,
-    activeCompanyId
+    activeCompanyId,
+    announcements,
+    leaveRequests
   };
 
   return (
@@ -786,7 +877,9 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       createCompany,
       deleteCompany,
       updateCompany,
-      changeActiveCompany
+      changeActiveCompany,
+      setAnnouncements,
+      setLeaveRequests
     }}>
       {children}
     </DatabaseContext.Provider>

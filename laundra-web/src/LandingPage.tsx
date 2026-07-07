@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase } from './DatabaseContext';
+import { apiSendDeliveryOtp, apiRegisterDeliveryBoy } from './deliveryApi';
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +29,25 @@ export const LandingPage: React.FC = () => {
   const [signupPhone, setSignupPhone] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupAddress, setSignupAddress] = useState('');
+  const [signupRole, setSignupRole] = useState<'customer' | 'delivery'>('customer');
+  const [companySearch, setCompanySearch] = useState('');
+  // Delivery Boy specific fields
+  const [signupVehicleType, setSignupVehicleType] = useState('Bike');
+  const [signupVehicleNumber, setSignupVehicleNumber] = useState('');
+  const [signupLicenseNumber, setSignupLicenseNumber] = useState('');
+  const [signupVehicleRc, setSignupVehicleRc] = useState('');
+  const [signupInsuranceNumber, setSignupInsuranceNumber] = useState('');
+  const [signupEmergencyContact, setSignupEmergencyContact] = useState('');
+  const [signupProfilePhoto, setSignupProfilePhoto] = useState('');
+  const [signupLicenseFile, setSignupLicenseFile] = useState('');
+  const [signupInsuranceFile, setSignupInsuranceFile] = useState('');
+  // OTP verification step inside signup modal
+  const [signupOtpStep, setSignupOtpStep] = useState(false);
+  const [signupOtpCode, setSignupOtpCode] = useState('');
+  const [signupTempDetails, setSignupTempDetails] = useState<any>(null);
+  // API loading / error feedback
+  const [apiLoading, setApiLoading] = useState(false);
+  const [apiError, setApiError] = useState('');
 
   // Form inputs - Login
   const [loginRole, setLoginRole] = useState('admin');
@@ -45,11 +65,10 @@ export const LandingPage: React.FC = () => {
   const [trackResult, setTrackResult] = useState<any>(null);
   const [trackError, setTrackError] = useState('');
 
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signupEmail || !signupPassword || !signupName) return;
 
-    // Check if user already exists
     const emailLower = signupEmail.trim().toLowerCase();
     const existing = db.users.find((u) => u.email.toLowerCase() === emailLower);
     if (existing) {
@@ -57,43 +76,189 @@ export const LandingPage: React.FC = () => {
       return;
     }
 
-    const newId = 'cust-' + (db.customers.length + 1);
-    const newCustomer = {
-      id: newId,
-      name: signupName,
-      email: signupEmail,
-      phone: signupPhone,
-      address: signupAddress,
-      walletBalance: 0,
-      loyaltyPoints: 0,
-      creditBalance: 0,
-      notes: 'New account created via landing sign up',
-      password: signupPassword,
-    };
+    if (signupRole === 'customer') {
+      // Customer registration — instant
+      const newId = 'cust-' + (db.customers.length + 1);
+      const newCustomer = {
+        id: newId,
+        name: signupName,
+        email: signupEmail,
+        phone: signupPhone,
+        address: signupAddress,
+        walletBalance: 0,
+        loyaltyPoints: 0,
+        creditBalance: 0,
+        notes: 'New account created via landing sign up',
+        password: signupPassword,
+      };
 
-    const newUser = {
-      id: 'u-' + (db.users.length + 1),
-      name: signupName,
-      role: 'customer' as const,
-      email: signupEmail,
-      password: signupPassword,
-      phone: signupPhone,
-      address: signupAddress,
-      status: 'Active',
-      createdAt: new Date().toISOString(),
-    };
+      const newUser = {
+        id: 'u-' + Date.now(),
+        name: signupName,
+        role: 'customer' as const,
+        email: signupEmail,
+        password: signupPassword,
+        phone: signupPhone,
+        address: signupAddress,
+        status: 'Active',
+        createdAt: new Date().toISOString(),
+      };
 
-    saveDB({
-      customers: [...db.customers, newCustomer],
-      users: [...db.users, newUser],
-    });
+      saveDB({
+        customers: [...db.customers, newCustomer],
+        users: [...db.users, newUser],
+      });
 
-    // Auto log in customer
-    localStorage.setItem(`ll_${db.activeCompanyId}_active_customer_id`, newCustomer.id);
-    localStorage.setItem('ll_active_customer_id', newCustomer.id);
-    localStorage.setItem('ll_active_workspace', 'customer');
+      localStorage.setItem(`ll_${db.activeCompanyId}_active_customer_id`, newCustomer.id);
+      localStorage.setItem('ll_active_customer_id', newCustomer.id);
+      localStorage.setItem('ll_active_workspace', 'customer');
+      setShowSignUp(false);
+      navigate('/customer');
+    } else {
+      // Delivery Boy registration — Step 1: send OTP via backend
+      const details = {
+        name: signupName,
+        email: emailLower,
+        phone: signupPhone,
+        password: signupPassword,
+        address: signupAddress,
+        vehicleType: signupVehicleType,
+        vehicleNumber: signupVehicleNumber,
+        licenseNumber: signupLicenseNumber,
+        vehicleRc: signupVehicleRc,
+        insuranceNumber: signupInsuranceNumber,
+        emergencyContact: signupEmergencyContact,
+        profilePhoto: signupProfilePhoto || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80',
+        licenseFile: signupLicenseFile || '',
+        insuranceFile: signupInsuranceFile || '',
+      };
+
+      setApiLoading(true);
+      setApiError('');
+      try {
+        // ── REAL BACKEND: POST /api/v1/auth/delivery-boy/send-otp ──
+        await apiSendDeliveryOtp({
+          email: emailLower,
+          company_code: db.activeCompanyId,
+        });
+        setSignupTempDetails(details);
+        setSignupOtpStep(true);
+        setApiError('');
+      } catch (err: any) {
+        // ── FALLBACK: backend unavailable – simulate OTP locally ──
+        console.warn('[deliveryApi] send-otp failed, using local fallback:', err.message);
+        setSignupTempDetails(details);
+        setSignupOtpStep(true);
+        setApiError('⚠️ Backend unreachable – using demo OTP mode. Enter 909090 to continue.');
+      } finally {
+        setApiLoading(false);
+      }
+    }
+  };
+
+  const handleSignUpOtpVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signupTempDetails) {
+      alert('Registration details expired. Please register again.');
+      setSignupOtpStep(false);
+      return;
+    }
+
+    setApiLoading(true);
+    setApiError('');
+
+    try {
+      // ── REAL BACKEND: POST /api/v1/auth/delivery-boy/register ──
+      const res = await apiRegisterDeliveryBoy({
+        company_code: db.activeCompanyId,
+        name: signupTempDetails.name,
+        phone: signupTempDetails.phone,
+        email: signupTempDetails.email,
+        password: signupTempDetails.password,
+        vehicle_type: signupTempDetails.vehicleType,
+        vehicle_number: signupTempDetails.vehicleNumber,
+        license_number: signupTempDetails.licenseNumber,
+        address: signupTempDetails.address,
+        vehicle_rc: signupTempDetails.vehicleRc,
+        insurance_number: signupTempDetails.insuranceNumber,
+        emergency_contact: signupTempDetails.emergencyContact,
+        profile_photo: signupTempDetails.profilePhoto,
+        license_file: signupTempDetails.licenseFile,
+        insurance_file: signupTempDetails.insuranceFile,
+        otp: signupOtpCode,
+      });
+
+      // Sync backend-created user into local state so admin panel reflects it
+      const newAgent: import('./DatabaseContext').User = {
+        id: res.id,
+        name: signupTempDetails.name,
+        role: 'delivery',
+        email: signupTempDetails.email,
+        password: '',                   // password managed by backend
+        phone: signupTempDetails.phone,
+        address: signupTempDetails.address,
+        status: 'Pending',
+        createdAt: new Date().toISOString(),
+        vehicleType: signupTempDetails.vehicleType,
+        vehicleNumber: signupTempDetails.vehicleNumber,
+        licenseNumber: signupTempDetails.licenseNumber,
+        vehicleRc: signupTempDetails.vehicleRc,
+        insuranceNumber: signupTempDetails.insuranceNumber,
+        emergencyContact: signupTempDetails.emergencyContact,
+        profilePhoto: signupTempDetails.profilePhoto,
+        licenseFile: signupTempDetails.licenseFile,
+        insuranceFile: signupTempDetails.insuranceFile,
+      };
+      saveDB({ users: [...db.users, newAgent] });
+
+      alert(res.message || 'Email verified! Your application is pending Admin approval. You will receive an email once approved.');
+    } catch (err: any) {
+      // ── FALLBACK: backend OTP invalid or unreachable ──
+      // If OTP code is wrong, show error. Otherwise simulate locally.
+      if (err.message.toLowerCase().includes('otp') || err.message.toLowerCase().includes('invalid') || err.message.toLowerCase().includes('expired')) {
+        setApiError(`❌ ${err.message}`);
+        setApiLoading(false);
+        return;
+      }
+
+      // Backend unreachable: validate locally with demo OTP
+      console.warn('[deliveryApi] register failed, using local fallback:', err.message);
+      if (signupOtpCode !== '909090') {
+        setApiError('❌ Invalid OTP code. Please enter 909090.');
+        setApiLoading(false);
+        return;
+      }
+
+      const newAgent: import('./DatabaseContext').User = {
+        id: 'u-' + Date.now(),
+        name: signupTempDetails.name,
+        role: 'delivery',
+        email: signupTempDetails.email,
+        password: signupTempDetails.password,
+        phone: signupTempDetails.phone,
+        address: signupTempDetails.address,
+        status: 'Pending',
+        createdAt: new Date().toISOString(),
+        vehicleType: signupTempDetails.vehicleType,
+        vehicleNumber: signupTempDetails.vehicleNumber,
+        licenseNumber: signupTempDetails.licenseNumber,
+        vehicleRc: signupTempDetails.vehicleRc,
+        insuranceNumber: signupTempDetails.insuranceNumber,
+        emergencyContact: signupTempDetails.emergencyContact,
+        profilePhoto: signupTempDetails.profilePhoto,
+        licenseFile: signupTempDetails.licenseFile,
+        insuranceFile: signupTempDetails.insuranceFile,
+      };
+      saveDB({ users: [...db.users, newAgent] });
+      alert('✅ Email verified (demo mode)! Application submitted. Pending Admin approval.');
+    }
+
+    setApiLoading(false);
+    setSignupTempDetails(null);
+    setSignupOtpStep(false);
+    setSignupOtpCode('');
+    setApiError('');
     setShowSignUp(false);
-    navigate('/customer');
   };
 
   const handleLogInSubmit = (e: React.FormEvent) => {
@@ -138,6 +303,18 @@ export const LandingPage: React.FC = () => {
       return;
     }
 
+    // Block delivery boys who are not yet approved
+    if (user.role === 'delivery' && user.status !== 'Active') {
+      alert('⏳ Your application is still pending approval by the Company Admin.\n\nYou will receive an email once your account has been approved. Please try again later.');
+      return;
+    }
+
+    // Block any suspended user
+    if (user.status === 'Suspended') {
+      alert('🚫 Your account has been suspended. Please contact the Company Admin.');
+      return;
+    }
+
     setShowLogIn(false);
 
     if (role === 'admin') {
@@ -156,8 +333,8 @@ export const LandingPage: React.FC = () => {
       saveDB({ activeRole: 'Delivery Boy', currentDeliveryBoy: user.name });
       localStorage.setItem('ll_activerole', 'Delivery Boy');
       localStorage.setItem('ll_active_delivery_boy', user.name);
-      localStorage.setItem('ll_active_workspace', 'admin');
-      navigate('/admin');
+      localStorage.setItem('ll_active_workspace', 'delivery');
+      navigate('/delivery');
     } else if (role === 'customer') {
       const customer = db.customers.find((c) => c.email.trim().toLowerCase() === email);
       if (customer) {
@@ -202,8 +379,8 @@ export const LandingPage: React.FC = () => {
         saveDB({ activeRole: 'Delivery Boy', currentDeliveryBoy: 'John Doe' });
         localStorage.setItem('ll_activerole', 'Delivery Boy');
         localStorage.setItem('ll_active_delivery_boy', 'John Doe');
-        localStorage.setItem('ll_active_workspace', 'admin');
-        navigate('/admin');
+        localStorage.setItem('ll_active_workspace', 'delivery');
+        navigate('/delivery');
       } else if (signInRole === 'Cashier') {
         saveDB({ activeRole: 'Cashier', currentDeliveryBoy: null });
         localStorage.setItem('ll_activerole', 'Cashier');
@@ -238,16 +415,6 @@ export const LandingPage: React.FC = () => {
     setTrackResult({ ...order, displayStatus });
   };
 
-  const openOrderWizard = () => {
-    // Navigate to customer portal which automatically opens order wizard or customer dashboard
-    const activeCustId = localStorage.getItem(`ll_${db.activeCompanyId}_active_customer_id`) || localStorage.getItem('ll_active_customer_id');
-    if (activeCustId) {
-      navigate('/customer');
-    } else {
-      setShowLogIn(true);
-      setLoginRole('customer');
-    }
-  };
 
   const handleLandingCardClick = (targetPortal: string, _subsection?: string) => {
     const activeCustId = localStorage.getItem(`ll_${db.activeCompanyId}_active_customer_id`) || localStorage.getItem('ll_active_customer_id');
@@ -259,6 +426,8 @@ export const LandingPage: React.FC = () => {
     } else {
       if (targetPortal === 'customer') {
         navigate('/customer');
+      } else if (targetPortal === 'delivery') {
+        navigate('/delivery');
       } else {
         navigate('/admin');
       }
@@ -396,7 +565,7 @@ export const LandingPage: React.FC = () => {
             <div className="cta-row">
               <button 
                 className="primary-btn" 
-                onClick={openOrderWizard} 
+                onClick={() => setShowSignUp(true)} 
                 style={{ 
                   fontSize: '1.1rem', 
                   padding: '16px 36px', 
@@ -710,58 +879,161 @@ export const LandingPage: React.FC = () => {
         </div>
       </footer>
 
-      {/* --- MODAL: CUSTOMER SIGN UP --- */}
+      {/* --- MODAL: SIGN UP (Customer / Delivery Boy) --- */}
       {showSignUp && (
         <div className="modal-overlay active" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div className="modal-content" style={{ maxWidth: '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white' }}>
+          <div className="modal-content" style={{ maxWidth: signupRole === 'delivery' && !signupOtpStep ? '520px' : '420px', borderRadius: '16px', overflow: 'hidden', padding: 0, background: 'white', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ background: 'linear-gradient(135deg, #2563eb, #14b8a6)', padding: '24px', color: 'white', position: 'relative' }}>
               <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '800' }}>Create Account</h2>
               <p style={{ margin: '4px 0 0 0', opacity: 0.9, fontSize: '0.9rem' }}>Join Laundra for modern garment care.</p>
-              <button onClick={() => setShowSignUp(false)} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
+              <button onClick={() => { setShowSignUp(false); setSignupOtpStep(false); setSignupTempDetails(null); }} className="icon-btn" style={{ position: 'absolute', right: '16px', top: '16px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem' }}>✕</button>
             </div>
-            <form onSubmit={handleSignUpSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div className="form-group">
-                <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Select Laundry Company</label>
-                <select 
-                  value={db.activeCompanyId} 
-                  onChange={(e) => changeActiveCompany(e.target.value)} 
-                  className="form-input" 
-                  required 
-                  style={{ height: '48px', fontWeight: '600' }}
-                >
-                  {db.companies.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="form-group">
-                <label>Full Name</label>
-                <input type="text" value={signupName} onChange={(e) => setSignupName(e.target.value)} className="form-input" required placeholder="e.g. Selena Gomez" />
-              </div>
-              <div className="form-group">
-                <label>Email</label>
-                <input type="email" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} className="form-input" required placeholder="selena@example.com" />
-              </div>
-              <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Phone</label>
-                  <input type="tel" value={signupPhone} onChange={(e) => setSignupPhone(e.target.value)} className="form-input" required placeholder="555-0144" />
+
+            {/* OTP Verification Step */}
+            {signupOtpStep ? (
+              <form onSubmit={handleSignUpOtpVerify} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h3 style={{ margin: 0, textAlign: 'center', color: '#1e3a8a', fontWeight: '800' }}>📧 Email OTP Verification</h3>
+                <p style={{ fontSize: '0.82rem', color: '#64748b', textAlign: 'center', margin: 0 }}>An OTP has been sent to <strong>{signupTempDetails?.email}</strong>. Enter it below to verify your email.</p>
+                {/* API error / fallback banner */}
+                {apiError && (
+                  <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8rem', color: '#92400e', fontWeight: '600' }}>
+                    {apiError}
+                  </div>
+                )}
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b' }}>OTP Code</label>
+                  <input type="text" value={signupOtpCode} onChange={e => setSignupOtpCode(e.target.value)} className="form-input" required placeholder="Enter OTP from email" disabled={apiLoading} style={{ textAlign: 'center', fontSize: '1.3rem', letterSpacing: '4px', fontWeight: '800' }} />
                 </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                  <label>Password</label>
-                  <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} className="form-input" required placeholder="••••••••" />
+                <button type="submit" disabled={apiLoading} className="primary-btn" style={{ width: '100%', justifyContent: 'center', padding: '12px', borderRadius: '8px', background: apiLoading ? '#86efac' : '#16a34a', color: 'white', border: 'none', cursor: apiLoading ? 'not-allowed' : 'pointer', fontWeight: '700' }}>
+                  {apiLoading ? '⏳ Verifying...' : '✅ Verify & Register'}
+                </button>
+                <button type="button" disabled={apiLoading} onClick={() => { setSignupOtpStep(false); setSignupTempDetails(null); setApiError(''); }} style={{ width: '100%', padding: '10px', background: '#e2e8f0', color: '#475569', border: 'none', borderRadius: '8px', cursor: apiLoading ? 'not-allowed' : 'pointer', fontWeight: '600' }}>← Back to Form</button>
+              </form>
+            ) : (
+              <form onSubmit={handleSignUpSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Role Selector */}
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Register As</label>
+                  <select value={signupRole} onChange={e => setSignupRole(e.target.value as any)} className="form-input" style={{ height: '48px', fontWeight: '600' }}>
+                    <option value="customer">🛍️ Customer</option>
+                    <option value="delivery">🚚 Delivery Boy</option>
+                  </select>
                 </div>
-              </div>
-              <div className="form-group">
-                <label>Address</label>
-                <input type="text" value={signupAddress} onChange={(e) => setSignupAddress(e.target.value)} className="form-input" required placeholder="102 Ocean View Apt" />
-              </div>
-              <button type="submit" className="primary-btn" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '8px', borderRadius: '8px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer' }}>Create Account</button>
-              <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '0.9rem' }}>
-                <span style={{ color: '#64748b' }}>Already have an account?</span> &nbsp;
-                <a onClick={() => { setShowSignUp(false); setShowLogIn(true); }} style={{ color: '#2563eb', fontWeight: '600', cursor: 'pointer' }}>Log In</a>
-              </div>
-            </form>
+
+                {/* Searchable Company Selector */}
+                <div className="form-group">
+                  <label style={{ fontWeight: '700', fontSize: '0.85rem', color: '#64748b', textTransform: 'uppercase' }}>Select Laundry Company</label>
+                  <input
+                    type="text"
+                    value={companySearch}
+                    onChange={e => setCompanySearch(e.target.value)}
+                    className="form-input"
+                    placeholder="🔍 Search company..."
+                    style={{ marginBottom: '6px', fontSize: '0.82rem' }}
+                  />
+                  <select
+                    value={db.activeCompanyId}
+                    onChange={(e) => changeActiveCompany(e.target.value)}
+                    className="form-input"
+                    required
+                    style={{ height: '48px', fontWeight: '600' }}
+                  >
+                    {db.companies.filter(c => c.name.toLowerCase().includes(companySearch.toLowerCase())).map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Common Fields */}
+                <div className="form-group">
+                  <label>Full Name</label>
+                  <input type="text" value={signupName} onChange={(e) => setSignupName(e.target.value)} className="form-input" required placeholder="e.g. Selena Gomez" />
+                </div>
+                <div className="form-group">
+                  <label>Email</label>
+                  <input type="email" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} className="form-input" required placeholder="selena@example.com" />
+                </div>
+                <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Phone</label>
+                    <input type="tel" value={signupPhone} onChange={(e) => setSignupPhone(e.target.value)} className="form-input" required placeholder="+1234567890" />
+                  </div>
+                  <div className="form-group" style={{ flex: 1 }}>
+                    <label>Password</label>
+                    <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} className="form-input" required placeholder="••••••••" />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>Address</label>
+                  <input type="text" value={signupAddress} onChange={(e) => setSignupAddress(e.target.value)} className="form-input" required placeholder="102 Ocean View Apt" />
+                </div>
+
+                {/* Delivery Boy specific fields */}
+                {signupRole === 'delivery' && (
+                  <>
+                    <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '12px', marginTop: '4px' }}>
+                      <h4 style={{ margin: '0 0 10px 0', fontSize: '0.88rem', fontWeight: '800', color: '#1e3a8a' }}>🚚 Vehicle & Documents</h4>
+                    </div>
+                    <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Vehicle Type</label>
+                        <select value={signupVehicleType} onChange={e => setSignupVehicleType(e.target.value)} className="form-input" style={{ height: '42px' }}>
+                          <option value="Bike">Bike</option>
+                          <option value="Car">Car</option>
+                          <option value="Van">Van</option>
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Vehicle Number</label>
+                        <input type="text" value={signupVehicleNumber} onChange={e => setSignupVehicleNumber(e.target.value)} className="form-input" required placeholder="KA-05-CD-9999" />
+                      </div>
+                    </div>
+                    <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>License Number</label>
+                        <input type="text" value={signupLicenseNumber} onChange={e => setSignupLicenseNumber(e.target.value)} className="form-input" required placeholder="DL-12345" />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Vehicle RC</label>
+                        <input type="text" value={signupVehicleRc} onChange={e => setSignupVehicleRc(e.target.value)} className="form-input" required placeholder="RC-12345" />
+                      </div>
+                    </div>
+                    <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Insurance Number</label>
+                        <input type="text" value={signupInsuranceNumber} onChange={e => setSignupInsuranceNumber(e.target.value)} className="form-input" required placeholder="INS-12345" />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label>Emergency Contact</label>
+                        <input type="tel" value={signupEmergencyContact} onChange={e => setSignupEmergencyContact(e.target.value)} className="form-input" required placeholder="+1987654321" />
+                      </div>
+                    </div>
+                    <div className="form-row" style={{ display: 'flex', gap: '12px' }}>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.72rem' }}>Profile Photo URL</label>
+                        <input type="text" value={signupProfilePhoto} onChange={e => setSignupProfilePhoto(e.target.value)} className="form-input" placeholder="https://..." style={{ fontSize: '0.78rem' }} />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.72rem' }}>License File URL</label>
+                        <input type="text" value={signupLicenseFile} onChange={e => setSignupLicenseFile(e.target.value)} className="form-input" placeholder="https://..." style={{ fontSize: '0.78rem' }} />
+                      </div>
+                      <div className="form-group" style={{ flex: 1 }}>
+                        <label style={{ fontSize: '0.72rem' }}>Insurance File URL</label>
+                        <input type="text" value={signupInsuranceFile} onChange={e => setSignupInsuranceFile(e.target.value)} className="form-input" placeholder="https://..." style={{ fontSize: '0.78rem' }} />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <button type="submit" disabled={apiLoading} className="primary-btn" style={{ width: '100%', justifyContent: 'center', padding: '12px', marginTop: '8px', borderRadius: '8px', background: apiLoading ? '#6b9fd4' : (signupRole === 'delivery' ? '#16a34a' : '#2563eb'), color: 'white', border: 'none', cursor: apiLoading ? 'not-allowed' : 'pointer', fontWeight: '700' }}>
+                  {apiLoading ? '⏳ Sending OTP...' : (signupRole === 'delivery' ? '🚚 Submit Application' : '🛍️ Create Account')}
+                </button>
+                <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '0.9rem' }}>
+                  <span style={{ color: '#64748b' }}>Already have an account?</span> &nbsp;
+                  <a onClick={() => { setShowSignUp(false); setShowLogIn(true); }} style={{ color: '#2563eb', fontWeight: '600', cursor: 'pointer' }}>Log In</a>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
