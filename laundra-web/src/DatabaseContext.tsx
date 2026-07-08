@@ -11,6 +11,34 @@ export interface Service {
   image?: string;
 }
 
+export interface Item {
+  id: string;
+  companyId: string;
+  englishName: string;
+  arabicName?: string;
+  status: 'Active' | 'Inactive';
+}
+
+export interface ServiceType {
+  id: string;
+  companyId: string;
+  name: string;
+}
+
+export interface ServiceVariant {
+  id: string;
+  serviceTypeId: string;
+  name: string;
+}
+
+export interface ItemPrice {
+  id: string;
+  companyId: string;
+  itemId: string;
+  serviceVariantId: string;
+  price: number | null;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -24,7 +52,7 @@ export interface Customer {
   subRemaining?: number;
   subDuration?: string;
   password?: string;
-  qrDisabled?: boolean;
+  qrStatus?: 'Active QR' | 'Regenerated' | 'Disabled' | 'Shared via WhatsApp' | 'Not Shared Yet';
 }
 
 export interface Order {
@@ -52,6 +80,7 @@ export interface Order {
   commission?: number;
   paymentStatus?: string;
   deliveryOtp?: string;
+  pickupNotes?: string;
 }
 
 export interface Expense {
@@ -179,6 +208,10 @@ export interface LeaveRequest {
 
 export interface Database {
   services: Service[];
+  items: Item[];
+  serviceTypes: ServiceType[];
+  serviceVariants: ServiceVariant[];
+  itemPrices: ItemPrice[];
   customers: Customer[];
   orders: Order[];
   expenses: Expense[];
@@ -198,6 +231,10 @@ export interface Database {
 interface DatabaseContextType {
   db: Database;
   setServices: (services: Service[]) => void;
+  setItems: (items: Item[]) => void;
+  setServiceTypes: (serviceTypes: ServiceType[]) => void;
+  setServiceVariants: (variants: ServiceVariant[]) => void;
+  setItemPrices: (prices: ItemPrice[]) => void;
   setCustomers: (customers: Customer[]) => void;
   setOrders: (orders: Order[]) => void;
   setExpenses: (expenses: Expense[]) => void;
@@ -233,10 +270,10 @@ const DEFAULT_SERVICES: Service[] = [
 ];
 
 const DEFAULT_CUSTOMERS: Customer[] = [
-  { id: 'cust-1', name: 'Selena Gomez', phone: '555-0144', email: 'selena@gomez.com', address: '102 Ocean View Apt, Malibu', walletBalance: 150.00, loyaltyPoints: 1240, creditBalance: 0.00, notes: 'Prefers organic detergent, hang dry silk', subRemaining: 24, subDuration: "1 Month Left", password: 'password' },
-  { id: 'cust-2', name: 'David Beckham', phone: '555-0120', email: 'david@beckham.com', address: '77 Old Trafford Ln, London', walletBalance: 45.50, loyaltyPoints: 450, creditBalance: 12.00, notes: 'Heavy starch on shirts, separate collars', password: 'password' },
-  { id: 'cust-3', name: 'Emma Watson', phone: '555-0199', email: 'emma@watson.com', address: '42 Oxford Library Way', walletBalance: 320.00, loyaltyPoints: 2400, creditBalance: 0.00, notes: 'Steam press only, delicate lace care', password: 'password' },
-  { id: 'cust-4', name: 'Robert Downey Jr.', phone: '555-3000', email: 'tony@stark.com', address: '10880 Malibu Point, CA', walletBalance: 0.00, loyaltyPoints: 95, creditBalance: 145.00, notes: 'Express services preferred. Deliver to assistant.', password: 'password' }
+  { id: 'cust-1', name: 'Selena Gomez', phone: '555-0144', email: 'selena@gomez.com', address: '102 Ocean View Apt, Malibu', walletBalance: 150.00, loyaltyPoints: 1240, creditBalance: 0.00, notes: 'Prefers organic detergent, hang dry silk', subRemaining: 24, subDuration: "1 Month Left", password: 'password', qrStatus: 'Not Shared Yet' },
+  { id: 'cust-2', name: 'David Beckham', phone: '555-0120', email: 'david@beckham.com', address: '77 Old Trafford Ln, London', walletBalance: 45.50, loyaltyPoints: 450, creditBalance: 12.00, notes: 'Heavy starch on shirts, separate collars', password: 'password', qrStatus: 'Active QR' },
+  { id: 'cust-3', name: 'Emma Watson', phone: '555-0199', email: 'emma@watson.com', address: '42 Oxford Library Way', walletBalance: 320.00, loyaltyPoints: 2400, creditBalance: 0.00, notes: 'Steam press only, delicate lace care', password: 'password', qrStatus: 'Regenerated' },
+  { id: 'cust-4', name: 'Robert Downey Jr.', phone: '555-3000', email: 'tony@stark.com', address: '10880 Malibu Point, CA', walletBalance: 0.00, loyaltyPoints: 95, creditBalance: 145.00, notes: 'Express services preferred. Deliver to assistant.', password: 'password', qrStatus: 'Shared via WhatsApp' }
 ];
 
 const DEFAULT_ORDERS: Order[] = [
@@ -397,6 +434,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Local tenant states (raw state hooks)
   const [services, setServicesState] = useState<Service[]>(DEFAULT_SERVICES);
+  const [items, setItemsState] = useState<Item[]>([]);
+  const [serviceTypes, setServiceTypesState] = useState<ServiceType[]>([]);
+  const [serviceVariants, setServiceVariantsState] = useState<ServiceVariant[]>([]);
+  const [itemPrices, setItemPricesState] = useState<ItemPrice[]>([]);
   const [customers, setCustomersState] = useState<Customer[]>(DEFAULT_CUSTOMERS);
   const [orders, setOrdersState] = useState<Order[]>(DEFAULT_ORDERS);
   const [expenses, setExpensesState] = useState<Expense[]>(DEFAULT_EXPENSES);
@@ -414,6 +455,26 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setServices = (newVal: Service[]) => {
     setServicesState(newVal);
     localStorage.setItem(`ll_${activeCompanyIdRef.current}_services`, JSON.stringify(newVal));
+  };
+
+  const setItems = (newVal: Item[]) => {
+    setItemsState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_items`, JSON.stringify(newVal));
+  };
+
+  const setServiceTypes = (newVal: ServiceType[]) => {
+    setServiceTypesState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_serviceTypes`, JSON.stringify(newVal));
+  };
+
+  const setServiceVariants = (newVal: ServiceVariant[]) => {
+    setServiceVariantsState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_serviceVariants`, JSON.stringify(newVal));
+  };
+
+  const setItemPrices = (newVal: ItemPrice[]) => {
+    setItemPricesState(newVal);
+    localStorage.setItem(`ll_${activeCompanyIdRef.current}_itemPrices`, JSON.stringify(newVal));
   };
 
   const setCustomers = (newVal: Customer[]) => {
@@ -482,172 +543,63 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Helper to load company data (with migration support for comp-default)
   const loadCompanyData = (compId: string) => {
-    // 1. Services
-    const sSaved = localStorage.getItem(`ll_${compId}_services`);
-    if (sSaved) {
-      setServicesState(JSON.parse(sSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_services');
-        setServicesState(legacy ? JSON.parse(legacy) : DEFAULT_SERVICES);
+    const loadJson = (key: string, setter: (val: any) => void, fallback: any) => {
+      const saved = localStorage.getItem(`ll_${compId}_${key}`);
+      if (saved) {
+        setter(JSON.parse(saved));
       } else {
-        setServicesState(DEFAULT_SERVICES);
+        setter(fallback);
       }
-    }
+    };
 
-    // 2. Customers
-    const cSaved = localStorage.getItem(`ll_${compId}_customers`);
-    if (cSaved) {
-      setCustomersState(JSON.parse(cSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_customers');
-        setCustomersState(legacy ? JSON.parse(legacy) : DEFAULT_CUSTOMERS);
-      } else {
-        setCustomersState(DEFAULT_CUSTOMERS);
-      }
-    }
+    loadJson('services', setServicesState, DEFAULT_SERVICES);
+    loadJson('items', setItemsState, []);
+    loadJson('serviceTypes', setServiceTypesState, []);
+    loadJson('serviceVariants', setServiceVariantsState, []);
+    loadJson('itemPrices', setItemPricesState, []);
+    loadJson('customers', setCustomersState, DEFAULT_CUSTOMERS);
+    loadJson('orders', setOrdersState, []);
+    loadJson('expenses', setExpensesState, []);
+    loadJson('promos', setPromosState, DEFAULT_PROMOS);
+    loadJson('notifications', setNotificationsState, []);
+    loadJson('announcements', setAnnouncementsState, []);
+    loadJson('leaveRequests', setLeaveRequestsState, []);
 
-    // 3. Orders
-    const oSaved = localStorage.getItem(`ll_${compId}_orders`);
-    if (oSaved) {
-      setOrdersState(JSON.parse(oSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_orders');
-        setOrdersState(legacy ? JSON.parse(legacy) : DEFAULT_ORDERS);
-      } else {
-        setOrdersState([]);
-      }
-    }
-
-    // 4. Expenses
-    const eSaved = localStorage.getItem(`ll_${compId}_expenses`);
-    if (eSaved) {
-      setExpensesState(JSON.parse(eSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_expenses');
-        setExpensesState(legacy ? JSON.parse(legacy) : DEFAULT_EXPENSES);
-      } else {
-        setExpensesState([]);
-      }
-    }
-
-    // 5. Promos
-    const pSaved = localStorage.getItem(`ll_${compId}_promos`);
-    if (pSaved) {
-      setPromosState(JSON.parse(pSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_promos');
-        setPromosState(legacy ? JSON.parse(legacy) : DEFAULT_PROMOS);
-      } else {
-        setPromosState(DEFAULT_PROMOS);
-      }
-    }
-
-    // 6. Notifications
-    const nSaved = localStorage.getItem(`ll_${compId}_notifications`);
-    if (nSaved) {
-      setNotificationsState(JSON.parse(nSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_notifications');
-        setNotificationsState(legacy ? JSON.parse(legacy) : DEFAULT_NOTIFICATIONS);
-      } else {
-        setNotificationsState([]);
-      }
-    }
-
-    // 7. Users
+    // Users
     const uSaved = localStorage.getItem(`ll_${compId}_users`);
     if (uSaved) {
       setUsersState(JSON.parse(uSaved));
     } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_users');
-        setUsersState(legacy ? JSON.parse(legacy) : DEFAULT_USERS);
-      } else {
-        // new company: seed default admin user
-        const companyObj = companies.find(c => c.id === compId);
-        const seededAdmin: User = {
-          id: 'u-1',
-          name: 'Company Admin',
-          role: 'admin',
-          email: companyObj?.adminEmail || `admin@${compId}.com`,
-          password: 'admin',
-          phone: '',
-          address: '',
-          status: 'Active',
-          createdAt: new Date().toISOString()
-        };
-        setUsersState([seededAdmin]);
-      }
+      const companyObj = companies.find(c => c.id === compId);
+      const seededAdmin: User = {
+        id: 'u-1',
+        name: 'Company Admin',
+        role: 'admin',
+        email: companyObj?.adminEmail || `admin@${compId}.com`,
+        password: 'admin',
+        phone: '',
+        address: '',
+        status: 'Active',
+        createdAt: new Date().toISOString()
+      };
+      setUsersState([seededAdmin]);
     }
 
-    // 8. Drawer Cash
+    // Drawer Cash
     const dcSaved = localStorage.getItem(`ll_${compId}_drawercash`);
-    if (dcSaved) {
-      setDrawerCashState(parseFloat(dcSaved));
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_drawercash');
-        setDrawerCashState(legacy ? parseFloat(legacy) : 350.00);
-      } else {
-        setDrawerCashState(350.00);
-      }
-    }
+    setDrawerCashState(dcSaved ? parseFloat(dcSaved) : 350.00);
 
-    // 9. Active Branch
+    // Active Branch
     const abSaved = localStorage.getItem(`ll_${compId}_activebranch`);
-    if (abSaved) {
-      setActiveBranchState(abSaved);
-    } else {
-      if (compId === 'comp-default') {
-        const legacy = localStorage.getItem('ll_activebranch');
-        setActiveBranchState(legacy || 'Downtown HQ');
-      } else {
-        setActiveBranchState('Branch Main');
-      }
-    }
+    setActiveBranchState(abSaved || 'Downtown HQ');
 
-    // 10. Active Role
+    // Active Role
     const arSaved = localStorage.getItem(`ll_${compId}_activerole`);
     setActiveRoleState(arSaved || 'Admin');
 
-    // 11. Current Delivery Boy
+    // Current Delivery Boy
     const cdbSaved = localStorage.getItem(`ll_${compId}_active_delivery_boy`);
     setCurrentDeliveryBoyState(cdbSaved || null);
-
-    // 12. Announcements
-    const annSaved = localStorage.getItem(`ll_${compId}_announcements`);
-    if (annSaved) {
-      setAnnouncementsState(JSON.parse(annSaved));
-    } else {
-      setAnnouncementsState([
-        {
-          id: 'ann-1',
-          title: '🔥 Eid Promotion Launching',
-          content: 'Eid Al-Fitr promotion discounts are live! Share coupons with clients.',
-          date: '2026-07-06',
-          targetAudience: 'All',
-          author: 'HQ Admin'
-        },
-        {
-          id: 'ann-2',
-          title: '📢 Safety Precautions for Couriers',
-          content: 'Kindly wear helmets and obey speed limits on deliveries.',
-          date: '2026-07-07',
-          targetAudience: 'Delivery Staff',
-          author: 'Operations Manager'
-        }
-      ]);
-    }
-
-    // 13. LeaveRequests
-    const lrSaved = localStorage.getItem(`ll_${compId}_leaveRequests`);
-    setLeaveRequestsState(lrSaved ? JSON.parse(lrSaved) : []);
   };
 
   // Sync companies list
@@ -679,6 +631,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const changeActiveCompany = (companyId: string) => {
     // 1. Flush/save current company states
     localStorage.setItem(`ll_${activeCompanyId}_services`, JSON.stringify(services));
+    localStorage.setItem(`ll_${activeCompanyId}_items`, JSON.stringify(items));
+    localStorage.setItem(`ll_${activeCompanyId}_serviceTypes`, JSON.stringify(serviceTypes));
+    localStorage.setItem(`ll_${activeCompanyId}_serviceVariants`, JSON.stringify(serviceVariants));
+    localStorage.setItem(`ll_${activeCompanyId}_itemPrices`, JSON.stringify(itemPrices));
     localStorage.setItem(`ll_${activeCompanyId}_customers`, JSON.stringify(customers));
     localStorage.setItem(`ll_${activeCompanyId}_orders`, JSON.stringify(orders));
     localStorage.setItem(`ll_${activeCompanyId}_expenses`, JSON.stringify(expenses));
@@ -793,6 +749,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     localStorage.removeItem(`ll_${companyId}_services`);
+    localStorage.removeItem(`ll_${companyId}_items`);
+    localStorage.removeItem(`ll_${companyId}_serviceTypes`);
+    localStorage.removeItem(`ll_${companyId}_serviceVariants`);
+    localStorage.removeItem(`ll_${companyId}_itemPrices`);
     localStorage.removeItem(`ll_${companyId}_customers`);
     localStorage.removeItem(`ll_${companyId}_orders`);
     localStorage.removeItem(`ll_${companyId}_expenses`);
@@ -827,6 +787,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const saveDB = (fields: Partial<Database>) => {
     if (fields.services !== undefined) setServices(fields.services);
+    if (fields.items !== undefined) setItems(fields.items);
+    if (fields.serviceTypes !== undefined) setServiceTypes(fields.serviceTypes);
+    if (fields.serviceVariants !== undefined) setServiceVariants(fields.serviceVariants);
+    if (fields.itemPrices !== undefined) setItemPrices(fields.itemPrices);
     if (fields.customers !== undefined) setCustomers(fields.customers);
     if (fields.orders !== undefined) setOrders(fields.orders);
     if (fields.expenses !== undefined) setExpenses(fields.expenses);
@@ -843,6 +807,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const db: Database = {
     services,
+    items,
+    serviceTypes,
+    serviceVariants,
+    itemPrices,
     customers,
     orders,
     expenses,
@@ -863,6 +831,10 @@ export const DatabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     <DatabaseContext.Provider value={{
       db,
       setServices,
+      setItems,
+      setServiceTypes,
+      setServiceVariants,
+      setItemPrices,
       setCustomers,
       setOrders,
       setExpenses,

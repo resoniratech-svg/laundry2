@@ -1348,7 +1348,7 @@ input:checked + .express-badge {
   background: #f0f7ff;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-color);
-  overflow: hidden;
+  overflow: visible;
 }
 .admin-sidebar {
   width: 240px;

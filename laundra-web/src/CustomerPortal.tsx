@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDatabase, type Order, type Service, type Customer, type Promo } from './DatabaseContext';
+import { useDatabase, type Order, type Customer, type Promo } from './DatabaseContext';
 
 // Support ticket interface
 interface SupportTicket {
@@ -95,12 +95,11 @@ export const CustomerPortal: React.FC = () => {
 
   // --- ORDER WIZARD STATE ---
   const [showWizard, setShowWizard] = useState(false);
-  const [wizardStep, setWizardStep] = useState(1); // 1 = Frequency, 2 = Plan/Qty, 3 = Details, 4 = Payment, 5 = Success
+  const [wizardStep, setWizardStep] = useState(1); // 1 = Frequency, 2 = Catalog & Cart, 3 = Details, 4 = Payment, 5 = Success
   
   const [freq, setFreq] = useState<'One-time / Daily' | 'Monthly'>('One-time / Daily');
-  const [wizardService, setWizardService] = useState<Service | null>(null);
-  const [wizardPlan, setWizardPlan] = useState<'normal' | 'express'>('normal');
-  const [wizardQty, setWizardQty] = useState(1);
+  const [customerCart, setCustomerCart] = useState<{ itemId: string; itemName: string; serviceTypeId: string; serviceTypeName: string; variantId: string; variantName: string; price: number; qty: number }[]>([]);
+  const [selectedWizardItem, setSelectedWizardItem] = useState<any>(null);
 
   const [oName, setOName] = useState('');
   const [oEmail, setOEmail] = useState('');
@@ -111,9 +110,7 @@ export const CustomerPortal: React.FC = () => {
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState<Promo | null>(null);
 
-  // Service list filter categories
-  const categories = ['All', 'Wash & Fold', 'Dry Cleaning', 'Steam Iron', 'Shoe Cleaning', 'Carpet Cleaning', 'Blanket Cleaning'];
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  // Service list filter categories (removed unused)
 
   // Pre-fill details when customer logs in
   useEffect(() => {
@@ -135,24 +132,12 @@ export const CustomerPortal: React.FC = () => {
     navigate('/');
   };
 
-  // Filter services
-  const filteredServices = db.services.filter((s) => {
-    if (selectedCategory === 'All') return s.active !== false;
-    return s.active !== false && s.category === selectedCategory;
-  });
+  // Filter services (removed unused)
 
-  // Calculate pricing
-  const getServicePrice = (srv: Service | null, plan: 'normal' | 'express') => {
-    if (!srv) return 0;
-    let base = srv.price;
-    if (plan === 'express') {
-      base = base * 1.5; // +50% Express Surcharge
-    }
-    return base;
-  };
+  // Pricing helpers
 
   const getSubtotal = () => {
-    const baseTotal = getServicePrice(wizardService, wizardPlan) * wizardQty;
+    const baseTotal = customerCart.reduce((sum, item) => sum + (item.price * item.qty), 0);
     return freq === 'Monthly' ? baseTotal * 30 : baseTotal;
   };
 
@@ -220,10 +205,10 @@ export const CustomerPortal: React.FC = () => {
       branch: db.activeBranch || 'Downtown HQ',
       date: new Date().toISOString().split('T')[0],
       weightItems: freq === 'Monthly' 
-        ? `${wizardQty} Clothes/Day (${wizardService?.name} - Monthly Plan, ${wizardQty * 30} Total Items)`
-        : `${wizardQty} Items (${wizardService?.name})`,
-      quantity: freq === 'Monthly' ? wizardQty * 30 : wizardQty,
-      planType: wizardPlan,
+        ? `${customerCart.reduce((acc, i) => acc + i.qty, 0)} Clothes/Day (Monthly Plan, ${customerCart.reduce((acc, i) => acc + i.qty, 0) * 30} Total Items)`
+        : `${customerCart.reduce((acc, i) => acc + i.qty, 0)} Items`,
+      quantity: freq === 'Monthly' ? customerCart.reduce((acc, i) => acc + i.qty, 0) * 30 : customerCart.reduce((acc, i) => acc + i.qty, 0),
+      planType: freq,
       paymentMethod: payMethod.toUpperCase(),
       paymentStatus: payMethod === 'wallet' ? 'Paid' : 'Unpaid',
       status: 'Created',
@@ -231,7 +216,7 @@ export const CustomerPortal: React.FC = () => {
       deliveryStatus: 'Pending Assignment',
       phone: oPhone,
       address: oAddress,
-      services: [{ serviceId: wizardService?.id, name: wizardService?.name, qty: wizardQty, plan: wizardPlan }],
+      services: customerCart.map(i => ({ serviceId: i.variantId, name: `${i.itemName} - ${i.serviceTypeName} (${i.variantName})`, qty: i.qty, plan: i.variantName, price: i.price })),
       totalAmount: grandTotal,
       total: grandTotal,
       frequency: freq,
@@ -341,7 +326,7 @@ export const CustomerPortal: React.FC = () => {
     <div className="portal-wrapper active" id="customerPortal" style={{ background: '#f8fafc', minHeight: '100vh', display: 'flex' }}>
       
       {/* Sidebar Panel */}
-      <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0 }}>
+      <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRight: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0, position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
         <div className="sidebar-brand" style={{ padding: '0 20px 16px', borderBottom: '1px solid #f1f5f9', marginBottom: '16px' }}>
           <span style={{ fontSize: '1.2rem', fontWeight: '800', color: '#1e3a8a' }}>Laundra</span>
           <span style={{ fontSize: '0.8rem', color: '#64748b', marginLeft: '6px', fontWeight: '600' }}>Client Hub</span>
@@ -506,48 +491,22 @@ export const CustomerPortal: React.FC = () => {
         {/* 🏷️ SERVICES TAB */}
         {activeTab === 'services' && (
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '24px', paddingBottom: '8px' }}>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  data-category={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`pos-category-btn ${selectedCategory === cat ? 'active' : ''}`}
-                  style={{ whiteSpace: 'nowrap', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '8px 16px', fontSize: '0.85rem', cursor: 'pointer', fontWeight: '600' }}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-              {filteredServices.map((srv) => (
+            <h4 style={{ margin: '0 0 16px 0' }}>🧺 Service Catalog</h4>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '20px' }}>
+              {db.items.filter(i => i.status !== 'Inactive').map((item) => (
                 <div 
-                  key={srv.id} 
+                  key={item.id} 
                   onClick={() => {
-                    setWizardService(srv);
-                    setWizardStep(1);
+                    setWizardStep(2);
+                    setSelectedWizardItem(item);
                     setShowWizard(true);
                   }}
-                  style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '8px', cursor: 'pointer' }}
+                  style={{ border: '1px solid #cbd5e1', borderRadius: '12px', padding: '16px', background: '#f8fafc', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
                 >
-                  {srv.image ? (
-                    <img src={srv.image} alt={srv.name} style={{ width: '100%', height: '130px', objectFit: 'cover', borderRadius: '8px' }} />
-                  ) : (
-                    <div style={{ width: '100%', height: '130px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem' }}>🧺</div>
-                  )}
-                  <h4 style={{ margin: '8px 0 0 0', fontSize: '1rem', fontWeight: '700' }}>{srv.name}</h4>
-                  <span style={{ fontSize: '0.75rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '10px', width: 'fit-content' }}>{srv.category}</span>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '12px', marginTop: '10px' }}>
-                    <div>
-                      <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>Normal Rate</span>
-                      <strong style={{ fontSize: '1.1rem', color: '#2563eb' }}>QR {srv.price.toFixed(2)}</strong>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'block' }}>Express (+50%)</span>
-                      <strong style={{ fontSize: '1.1rem', color: '#ef4444' }}>QR {(srv.price * 1.5).toFixed(2)}</strong>
-                    </div>
-                  </div>
+                  <div style={{ fontSize: '3rem' }}>👕</div>
+                  <h4 style={{ margin: '8px 0 0 0', fontSize: '1.1rem', fontWeight: '700', textAlign: 'center' }}>{item.englishName}</h4>
+                  {item.arabicName && <span style={{ fontSize: '0.85rem', color: '#64748b' }}>{item.arabicName}</span>}
+                  <button style={{ marginTop: '10px', padding: '8px 16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', borderRadius: '8px', fontWeight: '700', cursor: 'pointer', width: '100%' }}>Book Now</button>
                 </div>
               ))}
             </div>
@@ -853,29 +812,92 @@ export const CustomerPortal: React.FC = () => {
               )}
 
               {wizardStep === 2 && (
-                <div>
-                  <h3 style={{ margin: 0 }}>🧺 Quantity & Service details</h3>
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '16px' }}>
-                    <div onClick={() => setWizardPlan('normal')} style={{ flex: 1, border: wizardPlan === 'normal' ? '2px solid #2563eb' : '2px solid #cbd5e1', borderRadius: '12px', padding: '16px', textAlign: 'center', cursor: 'pointer' }}>
-                      Normal rate: QR {getServicePrice(wizardService, 'normal').toFixed(2)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <h3 style={{ margin: 0 }}>🧺 Add Items to Cart</h3>
+                  
+                  <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '10px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {db.items.filter(i => i.status !== 'Inactive').map(item => (
+                        <div 
+                          key={item.id} 
+                          onClick={() => setSelectedWizardItem(selectedWizardItem?.id === item.id ? null : item)}
+                          style={{ 
+                            padding: '10px', 
+                            border: selectedWizardItem?.id === item.id ? '2px solid #2563eb' : '1px solid #cbd5e1', 
+                            borderRadius: '8px', 
+                            background: selectedWizardItem?.id === item.id ? '#eff6ff' : 'white', 
+                            cursor: 'pointer',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <div style={{ fontSize: '1.5rem' }}>👕</div>
+                          <div style={{ fontWeight: '700', fontSize: '0.75rem', marginTop: '4px' }}>{item.englishName}</div>
+                        </div>
+                      ))}
                     </div>
-                    <div onClick={() => setWizardPlan('express')} style={{ flex: 1, border: wizardPlan === 'express' ? '2px solid #ef4444' : '2px solid #cbd5e1', borderRadius: '12px', padding: '16px', textAlign: 'center', cursor: 'pointer' }}>
-                      Express rate: QR {getServicePrice(wizardService, 'express').toFixed(2)}
-                    </div>
+
+                    {selectedWizardItem && (
+                      <div style={{ marginTop: '16px', padding: '16px', background: 'white', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                        <h5 style={{ margin: '0 0 12px 0' }}>Select Service for {selectedWizardItem.englishName}</h5>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {db.serviceTypes.map(st => {
+                            const variants = db.serviceVariants.filter(sv => sv.serviceTypeId === st.id);
+                            return (
+                              <div key={st.id}>
+                                <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>{st.name}</div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                  {variants.map(sv => {
+                                    const priceRecord = db.itemPrices.find(ip => ip.itemId === selectedWizardItem.id && ip.serviceVariantId === sv.id);
+                                    if (!priceRecord?.price) return null;
+                                    return (
+                                      <button
+                                        key={sv.id}
+                                        onClick={() => {
+                                          const existing = customerCart.find(i => i.itemId === selectedWizardItem.id && i.variantId === sv.id);
+                                          if (existing) {
+                                            setCustomerCart(customerCart.map(i => i.itemId === selectedWizardItem.id && i.variantId === sv.id ? { ...i, qty: i.qty + 1 } : i));
+                                          } else {
+                                            setCustomerCart([...customerCart, { itemId: selectedWizardItem.id, itemName: selectedWizardItem.englishName, serviceTypeId: st.id, serviceTypeName: st.name, variantId: sv.id, variantName: sv.name, price: priceRecord.price || 0, qty: 1 }]);
+                                          }
+                                        }}
+                                        style={{ padding: '6px 10px', fontSize: '0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}
+                                      >
+                                        {sv.name} (+QR {priceRecord.price})
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '20px' }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: '700' }}>Item count</label>
-                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginTop: '6px' }}>
-                      <button onClick={() => setWizardQty(Math.max(1, wizardQty - 1))} style={{ padding: '6px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer' }}>−</button>
-                      <strong style={{ fontSize: '1.25rem' }}>{wizardQty}</strong>
-                      <button onClick={() => setWizardQty(wizardQty + 1)} style={{ padding: '6px 12px', background: '#cbd5e1', border: 'none', cursor: 'pointer' }}>+</button>
+                  {customerCart.length > 0 && (
+                    <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1' }}>
+                      <h5 style={{ margin: '0 0 12px 0' }}>🛒 Your Cart</h5>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '150px', overflowY: 'auto' }}>
+                        {customerCart.map((item, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', background: 'white', padding: '8px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                            <div>
+                              <strong>{item.itemName}</strong> - {item.serviceTypeName} ({item.variantName})
+                              <br/>Qty: {item.qty}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <strong>QR {(item.price * item.qty).toFixed(2)}</strong>
+                              <button onClick={() => setCustomerCart(customerCart.filter((_, idx) => idx !== i))} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer' }}>✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px' }}>
-                    <button onClick={() => setWizardStep(1)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', cursor: 'pointer' }}>Back</button>
-                    <button onClick={() => setWizardStep(3)} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer' }}>Continue</button>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                    <button onClick={() => setWizardStep(1)} style={{ padding: '8px 16px', border: '1px solid #cbd5e1', cursor: 'pointer', borderRadius: '6px' }}>Back</button>
+                    <button disabled={customerCart.length === 0} onClick={() => setWizardStep(3)} style={{ padding: '8px 16px', background: customerCart.length === 0 ? '#94a3b8' : '#2563eb', color: 'white', border: 'none', cursor: customerCart.length === 0 ? 'not-allowed' : 'pointer', borderRadius: '6px' }}>Continue</button>
                   </div>
                 </div>
               )}
@@ -960,18 +982,20 @@ export const CustomerPortal: React.FC = () => {
               )}
               
               <div style={{ borderTop: '1px solid #cbd5e1', paddingTop: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].map((st, idx) => {
-                  const activeIdx = ['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].indexOf(selectedOrder.status);
-                  const stepIdx = ['Created', 'Accepted', 'Received', 'Washing', 'Ready', 'Out For Delivery', 'Delivered'].indexOf(st);
-                  const isDone = activeIdx >= stepIdx;
-
-                  return (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: isDone ? '#16a34a' : '#cbd5e1' }}>{isDone ? '🟢' : '⚪'}</span>
-                      <span style={{ fontWeight: isDone ? '700' : '400' }}>{st}</span>
-                    </div>
-                  );
-                })}
+                {[
+                  { label: 'Order Created', ok: true },
+                  { label: 'Accepted', ok: ['Accepted', 'Pickup Assigned', 'Picked Up', 'Received', 'Sorting', 'Washing', 'Drying', 'Ironing', 'Processing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Out for Delivery', 'Delivered'].includes(selectedOrder.status) },
+                  { label: 'Received', ok: ['Received', 'Sorting', 'Washing', 'Drying', 'Ironing', 'Processing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Out for Delivery', 'Delivered'].includes(selectedOrder.status) },
+                  { label: 'Washing & Processing', ok: ['Washing', 'Drying', 'Ironing', 'Processing', 'Quality Check', 'Packing', 'Ready', 'Out For Delivery', 'Out for Delivery', 'Delivered'].includes(selectedOrder.status) },
+                  { label: 'Ready for Collection', ok: ['Ready', 'Out For Delivery', 'Out for Delivery', 'Delivered'].includes(selectedOrder.status) },
+                  { label: 'Out For Delivery', ok: ['Out For Delivery', 'Out for Delivery', 'Delivered'].includes(selectedOrder.status) },
+                  { label: 'Delivered', ok: ['Delivered'].includes(selectedOrder.status) }
+                ].map((step, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: step.ok ? '#16a34a' : '#cbd5e1' }}>{step.ok ? '🟢' : '⚪'}</span>
+                    <span style={{ fontWeight: step.ok ? '700' : '400' }}>{step.label}</span>
+                  </div>
+                ))}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '12px' }}>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDatabase, type Company, type User } from './DatabaseContext';
+import { ServiceCatalogUploader } from './components/ServiceCatalogUploader';
 
 // ─── Interfaces ─────────────────────────────────────────────────────────────
 interface Ticket {
@@ -60,7 +61,7 @@ interface OTPLog {
 
 export const SuperAdminPortal: React.FC = () => {
   const navigate = useNavigate();
-  const { db, saveDB, createCompany, updateCompany } = useDatabase();
+  const { db, saveDB, createCompany, updateCompany, changeActiveCompany } = useDatabase();
 
   // Navigation main active tab matching the required SaaS workflow
   const [activeTab, setActiveTab] = useState<
@@ -80,7 +81,7 @@ export const SuperAdminPortal: React.FC = () => {
   >('dashboard');
 
   // Sub-tabs states
-  const [companyMgmtSub, setCompanyMgmtSub] = useState<'companies' | 'admins' | 'monitoring'>('companies');
+  const [companyMgmtSub, setCompanyMgmtSub] = useState<'companies' | 'admins' | 'monitoring' | 'services'>('companies');
   const [subMgmtSub, setSubMgmtSub] = useState<'plans' | 'trial' | 'renewals'>('plans');
   const [reportsSub, setReportsSub] = useState<'revenue' | 'conversion' | 'usage' | 'stats'>('revenue');
 
@@ -305,6 +306,16 @@ export const SuperAdminPortal: React.FC = () => {
   const handleSignOut = () => {
     localStorage.removeItem('ll_super_admin_session');
     navigate('/');
+  };
+
+  const handleImpersonate = (companyId: string, companyName: string) => {
+    if (confirm(`Are you sure you want to log in as Admin for ${companyName}?`)) {
+      localStorage.setItem('ll_impersonatedCompanyId', companyId);
+      localStorage.setItem('ll_active_workspace', 'admin');
+      localStorage.setItem('ll_activerole', 'Admin');
+      changeActiveCompany(companyId);
+      navigate('/admin');
+    }
   };
 
   const handleToggleSuspension = (company: Company) => {
@@ -701,12 +712,12 @@ export const SuperAdminPortal: React.FC = () => {
     <div style={{ display: 'flex', minHeight: '100vh', background: '#f8fafc', fontFamily: 'Inter, sans-serif' }}>
       
       {/* ─── SIDEBAR NAVIGATION ─── */}
-      <aside style={{ width: '270px', background: '#0f172a', color: 'white', display: 'flex', flexDirection: 'column', padding: '24px 0', borderRight: '1px solid #1e293b' }}>
-        <div style={{ padding: '0 24px 20px', borderBottom: '1px solid #1e293b' }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <aside style={{ width: '270px', background: '#ffffff', color: '#1e293b', display: 'flex', flexDirection: 'column', padding: '24px 0', borderRight: '1px solid #e2e8f0', boxShadow: '2px 0 8px rgba(0,0,0,0.02)', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
+        <div style={{ padding: '0 24px 20px', borderBottom: '1px solid #f1f5f9' }}>
+          <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: '800', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span>🪐</span> Laundra SaaS
           </h2>
-          <p style={{ margin: '4px 0 0 0', fontSize: '0.7rem', color: '#94a3b8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Platform Super Admin</p>
+          <p style={{ margin: '4px 0 0 0', fontSize: '0.7rem', color: '#64748b', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Platform Super Admin</p>
         </div>
 
         <ul style={{ listStyle: 'none', padding: '20px 16px', margin: 0, display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, overflowY: 'auto' }}>
@@ -733,37 +744,50 @@ export const SuperAdminPortal: React.FC = () => {
                 borderRadius: '8px',
                 fontWeight: '700',
                 fontSize: '0.86rem',
-                color: activeTab === tab.id ? 'white' : '#94a3b8',
-                background: activeTab === tab.id ? 'linear-gradient(135deg, #0284c7, #0369a1)' : 'transparent',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
-                transition: 'all 0.15s'
+                gap: '12px',
+                background: activeTab === tab.id ? '#eff6ff' : 'transparent',
+                color: activeTab === tab.id ? '#2563eb' : '#475569',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== tab.id) {
+                  e.currentTarget.style.background = '#f8fafc';
+                  e.currentTarget.style.color = '#1e293b';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (activeTab !== tab.id) {
+                  e.currentTarget.style.background = 'transparent';
+                  e.currentTarget.style.color = '#475569';
+                }
               }}
             >
-              <span style={{ fontSize: '1rem' }}>{tab.icon}</span> <span>{tab.label}</span>
+              <span style={{ fontSize: '1.1rem' }}>{tab.icon}</span> {tab.label}
             </li>
           ))}
         </ul>
 
-        <div style={{ padding: '16px', borderTop: '1px solid #1e293b' }}>
+        <div style={{ padding: '16px', borderTop: '1px solid #f1f5f9' }}>
           <button 
             onClick={handleSignOut}
             style={{
               width: '100%',
               padding: '10px',
               borderRadius: '8px',
-              border: '1.5px solid #ef4444',
-              background: 'transparent',
-              color: '#f87171',
+              border: '1.5px solid #fca5a5',
+              background: '#fef2f2',
+              color: '#ef4444',
               fontWeight: '700',
               fontSize: '0.85rem',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '8px'
+              gap: '8px',
+              transition: 'all 0.2s'
             }}
           >
             <span>🚪</span> Sign Out
@@ -875,7 +899,8 @@ export const SuperAdminPortal: React.FC = () => {
               {[
                 { id: 'companies', label: 'Manage Companies', icon: '🏢' },
                 { id: 'admins', label: 'Company Admins', icon: '👥' },
-                { id: 'monitoring', label: 'Company Monitoring (Read-Only)', icon: '👁️' }
+                { id: 'monitoring', label: 'Company Monitoring (Read-Only)', icon: '👁️' },
+                { id: 'services', label: 'Service Catalog Engine', icon: '📦' }
               ].map(sub => (
                 <button
                   key={sub.id}
@@ -961,6 +986,7 @@ export const SuperAdminPortal: React.FC = () => {
                           <td style={{ padding: '16px', textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', gap: '6px' }}>
                               <button onClick={() => setViewingCompanyProfile(c)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>👁️ Profile</button>
+                              <button onClick={() => handleImpersonate(c.id, c.name)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #0284c7', background: '#f0f9ff', color: '#0284c7', cursor: 'pointer' }}>🔑 Impersonate</button>
                               <button onClick={() => { setEditingCompanyDetails(c); setEditCompName(c.name); setEditCompPhone(c.phone || ''); setEditCompAddress(c.address || ''); setEditCompGst(c.gstNumber || ''); setEditCompBusinessType(c.businessType || 'Dry Cleaners'); setEditCompLogo(c.logo || ''); }} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer' }}>✏️ Edit</button>
                               <button onClick={() => handleToggleSuspension(c)} style={{ padding: '5px 10px', fontSize: '0.75rem', borderRadius: '6px', fontWeight: '700', border: 'none', background: c.status === 'Active' ? '#ffedd5' : '#dcfce7', color: c.status === 'Active' ? '#c2410c' : '#15803d', cursor: 'pointer' }}>{c.status === 'Active' ? 'Suspend' : 'Activate'}</button>
                               {c.id !== 'comp-default' && (
@@ -1078,7 +1104,14 @@ export const SuperAdminPortal: React.FC = () => {
                     <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
                       {monitoringTab === 'info' && (
                         <div>
-                          <h3 style={{ margin: '0 0 16px 0' }}>🏢 Company General Info</h3>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                            <h3 style={{ margin: 0 }}>🏢 Company General Info</h3>
+                            <button 
+                              onClick={() => handleImpersonate(monitoredCompId, db.companies.find(c => c.id === monitoredCompId)?.name || 'Unknown')} 
+                              style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #0284c7', background: '#f0f9ff', color: '#0284c7', fontWeight: '700', cursor: 'pointer' }}>
+                              🔑 Impersonate Admin
+                            </button>
+                          </div>
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '0.88rem' }}>
                             <div><strong>Company ID:</strong> {monitoredCompId}</div>
                             <div><strong>GST Number:</strong> {db.companies.find(c => c.id === monitoredCompId)?.gstNumber || 'N/A'}</div>
@@ -1186,6 +1219,22 @@ export const SuperAdminPortal: React.FC = () => {
                       )}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+
+            {/* View: Services (Excel Import) */}
+            {companyMgmtSub === 'services' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ background: 'white', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '8px' }}>Select Tenant Company for Service Import</label>
+                  <select value={monitoredCompId} onChange={e => setMonitoredCompId(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1.5px solid #cbd5e1', width: '100%', maxWidth: '400px', outline: 'none' }}>
+                    <option value="">— Select Company —</option>
+                    {db.companies.map(c => <option key={c.id} value={c.id}>{c.name} ({c.slug})</option>)}
+                  </select>
+                </div>
+                {monitoredCompId && (
+                  <ServiceCatalogUploader companyId={monitoredCompId} />
                 )}
               </div>
             )}

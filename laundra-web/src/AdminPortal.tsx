@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useDatabase, type Order, type Service, type Customer, type User, type Expense, type Promo, type Announcement } from './DatabaseContext';
 import { PortalLayout } from './components/PortalLayout';
 import { apiApproveDeliveryBoy } from './deliveryApi';
@@ -25,6 +26,7 @@ interface SupportTicket {
 
 export const AdminPortal: React.FC = () => {
   const { db, saveDB } = useDatabase();
+  const navigate = useNavigate();
 
   // Announcement composer state
   const [annTitle, setAnnTitle] = useState('');
@@ -111,7 +113,8 @@ export const AdminPortal: React.FC = () => {
   const [staffVehicleRc, setStaffVehicleRc] = useState('');
 
   // Manual orders / POS
-  const [posCart, setPosCart] = useState<{ service: Service; qty: number; express: boolean }[]>([]);
+  const [posCart, setPosCart] = useState<{ itemId: string; itemName: string; serviceTypeId: string; serviceTypeName: string; variantId: string; variantName: string; price: number; qty: number }[]>([]);
+  const [selectedPosItem, setSelectedPosItem] = useState<any>(null);
   const [posCustId, setPosCustId] = useState('');
   const [posCustName, setPosCustName] = useState('');
   const [posCustPhone, setPosCustPhone] = useState('');
@@ -119,7 +122,7 @@ export const AdminPortal: React.FC = () => {
   const [posCustAddress, setPosCustAddress] = useState('');
   const [posPayMethod, setPosPayMethod] = useState<'Cash' | 'Card' | 'UPI' | 'Wallet'>('Cash');
   const [posSearch, setPosSearch] = useState('');
-  const [posCategory, setPosCategory] = useState('All');
+  // Removed posCategory
   const [posCommission, setPosCommission] = useState<string>('');
 
   // Service Forms
@@ -460,13 +463,7 @@ export const AdminPortal: React.FC = () => {
     setSExpressSurcharge('50');
   };
 
-  const handleDeleteService = (id: string) => {
-    if (confirm('Delete service from catalog?')) {
-      const updated = db.services.filter(s => s.id !== id);
-      saveDB({ services: updated });
-      addActivity('Settings', `Deleted catalog service ID: ${id}`);
-    }
-  };
+  // removed handleDeleteService
 
   // Order Management actions
   const handleUpdateOrderStatus = (orderId: string, nextStatus: Order['status']) => {
@@ -525,11 +522,7 @@ export const AdminPortal: React.FC = () => {
 
   // Payments / POS manual orders checkout
   const getPOSCartTotal = () => {
-    return posCart.reduce((sum, item) => {
-      let base = item.service.price;
-      if (item.express) base *= (1 + (item.service.expressSurcharge || 0) / 100);
-      return sum + (base * item.qty);
-    }, 0);
+    return posCart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   };
 
   const handleCheckoutPOS = () => {
@@ -577,7 +570,7 @@ export const AdminPortal: React.FC = () => {
       paymentMethod: posPayMethod,
       paymentStatus: posPayMethod === 'Wallet' ? 'Paid' : 'Unpaid',
       deliveryOtp: Math.floor(100000 + Math.random() * 900000).toString(),
-      services: posCart.map(i => ({ serviceId: i.service.id, name: i.service.name, qty: i.qty, plan: i.express ? 'Express (+50%)' : 'Normal' })),
+      services: posCart.map(i => ({ serviceId: i.variantId, name: `${i.itemName} - ${i.serviceTypeName} (${i.variantName})`, qty: i.qty, plan: i.variantName, price: i.price })),
       deliveryStatus: 'Received',
       commission: commAmt,
       courier: null,
@@ -741,20 +734,22 @@ export const AdminPortal: React.FC = () => {
   // QR share WhatsApp
   const handleShareQR = (cust: Customer) => {
     addActivity('Customer', `Shared QR Code for customer: ${cust.name}`);
+    const updated = db.customers.map(c => c.id === cust.id ? { ...c, qrStatus: 'Shared via WhatsApp' as const } : c);
+    saveDB({ customers: updated });
     window.open(`https://api.whatsapp.com/send?text=Scan this secure link to access your customer laundry portal: http://localhost:5173/customer?login=${cust.id}`);
   };
 
   const handleDisableQR = (cust: Customer) => {
-    const updated = db.customers.map(c => c.id === cust.id ? { ...c, qrDisabled: true } : c);
+    const updated = db.customers.map(c => c.id === cust.id ? { ...c, qrDisabled: true, qrStatus: 'Disabled' as const } : c);
     saveDB({ customers: updated });
     addActivity('Customer', `Disabled lost QR Code for customer: ${cust.name}`);
     alert(`QR code for ${cust.name} has been disabled. The old link is now invalid.`);
-    setQrCust({ ...cust, qrDisabled: true });
+    setQrCust({ ...cust, qrStatus: 'Disabled' });
   };
 
   const handleGenerateNewSecureQR = (cust: Customer) => {
     const newId = 'cust-' + Math.floor(10000 + Math.random() * 90000);
-    const updatedCustomers = db.customers.map(c => c.id === cust.id ? { ...c, id: newId, qrDisabled: false } : c);
+    const updatedCustomers = db.customers.map(c => c.id === cust.id ? { ...c, id: newId, qrDisabled: false, qrStatus: 'Regenerated' as const } : c);
     const updatedUsers = db.users.map(u => u.role === 'customer' && u.email === cust.email ? { ...u, id: newId } : u);
     const updatedOrders = db.orders.map(o => o.customerId === cust.id ? { ...o, customerId: newId } : o);
 
@@ -846,8 +841,26 @@ export const AdminPortal: React.FC = () => {
   const todayRevenue = db.orders.reduce((sum, o) => sum + (o.totalAmount || o.total || 0), 0);
   const pendingPaymentsTotal = db.orders.filter(o => o.paymentStatus === 'Unpaid').reduce((sum, o) => sum + (o.totalAmount || o.total || 0), 0);
 
+  const impersonatedCompanyId = localStorage.getItem('ll_impersonatedCompanyId');
+  const isImpersonating = !!impersonatedCompanyId && impersonatedCompanyId === db.activeCompanyId;
+
   return (
-    <PortalLayout activeModule={activeModule} onModuleChange={setActiveModule}>
+    <>
+      {isImpersonating && (
+        <div style={{ background: '#ef4444', color: 'white', padding: '10px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 9999, position: 'relative', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+          <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>⚠️</span> 
+            SUPER ADMIN IMPERSONATION MODE: Viewing {db.companies.find(c => c.id === db.activeCompanyId)?.name || db.activeCompanyId}
+          </div>
+          <button onClick={() => {
+            localStorage.removeItem('ll_impersonatedCompanyId');
+            navigate('/super-admin');
+          }} style={{ background: 'white', color: '#ef4444', border: 'none', padding: '6px 14px', borderRadius: '6px', fontWeight: '800', cursor: 'pointer', fontSize: '0.8rem', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }}>
+            Log out & Return to Super Admin
+          </button>
+        </div>
+      )}
+      <PortalLayout activeModule={activeModule} onModuleChange={setActiveModule}>
       
       {/* ─── TABS ────────────────────────────────────────────────────────────── */}
 
@@ -887,7 +900,6 @@ export const AdminPortal: React.FC = () => {
               <button onClick={() => setActiveModule('pos')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Create Manual Order</button>
               {db.activeRole !== 'Cashier' && (
                 <>
-                  <button onClick={() => setActiveModule('services')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Add Service</button>
                   <button onClick={() => setActiveModule('delivery-staff')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>Approve Delivery Staff</button>
                   <button onClick={() => setActiveModule('reports')} style={{ padding: '8px 16px', background: 'white', border: '1.5px solid #cbd5e1', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '0.82rem' }}>View Reports</button>
                 </>
@@ -944,6 +956,7 @@ export const AdminPortal: React.FC = () => {
                 <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
                   <th style={{ padding: '12px' }}>Customer Name</th>
                   <th style={{ padding: '12px' }}>Contact</th>
+                  <th style={{ padding: '12px' }}>QR Status</th>
                   <th style={{ padding: '12px' }}>Wallet Balance</th>
                   <th style={{ padding: '12px' }}>Loyalty Points</th>
                   <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
@@ -956,6 +969,13 @@ export const AdminPortal: React.FC = () => {
                     <tr key={c.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
                       <td style={{ padding: '12px', fontWeight: '700' }}>{c.name}</td>
                       <td style={{ padding: '12px' }}>{c.email} • {c.phone}</td>
+                      <td style={{ padding: '12px' }}>
+                        {c.qrStatus === 'Active QR' && <span style={{ padding: '4px 8px', background: '#dcfce7', color: '#16a34a', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>🟢 Active QR</span>}
+                        {c.qrStatus === 'Shared via WhatsApp' && <span style={{ padding: '4px 8px', background: '#dbeafe', color: '#2563eb', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>📤 Shared via WhatsApp</span>}
+                        {c.qrStatus === 'Regenerated' && <span style={{ padding: '4px 8px', background: '#fef3c7', color: '#d97706', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>🔄 Regenerated</span>}
+                        {c.qrStatus === 'Disabled' && <span style={{ padding: '4px 8px', background: '#fee2e2', color: '#dc2626', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>🚫 Disabled</span>}
+                        {(!c.qrStatus || c.qrStatus === 'Not Shared Yet') && <span style={{ padding: '4px 8px', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '700' }}>⏳ Not Shared Yet</span>}
+                      </td>
                       <td style={{ padding: '12px', fontWeight: '700', color: '#16a34a' }}>QR {c.walletBalance.toFixed(2)}</td>
                       <td style={{ padding: '12px', fontWeight: '700', color: '#6b21a8' }}>{c.loyaltyPoints} pts</td>
                       <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -1153,48 +1173,58 @@ export const AdminPortal: React.FC = () => {
         </div>
       )}
 
-      {/* 🏷️ SERVICE MANAGEMENT TAB */}
+      {/* 🏷️ SERVICE MANAGEMENT TAB (READ ONLY) */}
       {activeModule === 'services' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={() => { setAddingService(true); setSName(''); setSPrice(''); }} style={{ padding: '10px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>➕ Add Service</button>
+          <div style={{ background: '#eff6ff', borderRadius: '12px', padding: '16px', border: '1px solid #bfdbfe' }}>
+            <h4 style={{ margin: '0 0 8px 0', color: '#1e40af' }}>ℹ️ Service Catalog (Read Only)</h4>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: '#1e3a8a' }}>
+              Your service catalog and pricing matrix are centrally managed by the Super Admin. You can view your imported services below, but you cannot edit or delete them. If you need changes, please contact the Super Admin or ask them to re-import your updated Excel sheet.
+            </p>
           </div>
 
-          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-              <thead>
-                <tr style={{ background: '#f8fafc', borderBottom: '2px solid #cbd5e1', textAlign: 'left' }}>
-                  <th style={{ padding: '12px' }}>Service Name</th>
-                  <th style={{ padding: '12px' }}>Category</th>
-                  <th style={{ padding: '12px' }}>Price (QR)</th>
-                  <th style={{ padding: '12px' }}>Express Price (QR)</th>
-                  <th style={{ padding: '12px', textAlign: 'center' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {db.services.map(s => (
-                  <tr key={s.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <td style={{ padding: '12px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      {s.image ? (
-                        <img src={s.image} alt={s.name} style={{ width: '36px', height: '36px', borderRadius: '6px', objectFit: 'cover', border: '1px solid #cbd5e1' }} />
-                      ) : (
-                        <div style={{ width: '36px', height: '36px', borderRadius: '6px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' }}>🧺</div>
-                      )}
-                      <span>{s.name}</span>
-                    </td>
-                    <td style={{ padding: '12px' }}>{s.category}</td>
-                    <td style={{ padding: '12px', fontWeight: '700', color: '#2563eb' }}>QR {s.price.toFixed(2)}</td>
-                    <td style={{ padding: '12px', fontWeight: '700', color: '#7c3aed' }}>QR {(s.price * (1 + (s.expressSurcharge || 0) / 100)).toFixed(2)} (+{s.expressSurcharge || 0}%)</td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        <button onClick={() => { setEditingService(s); setSName(s.name); setSCategory(s.category); setSPrice(s.price.toString()); setSExpressSurcharge(s.expressSurcharge ? s.expressSurcharge.toString() : '50'); setSImage(s.image || ''); }} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>✏️ Edit</button>
-                        <button onClick={() => handleDeleteService(s.id)} style={{ padding: '4px 8px', fontSize: '0.75rem', background: '#fef2f2', color: '#ef4444', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>🗑️ Delete</button>
-                      </div>
-                    </td>
+          <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
+            <h4 style={{ margin: '0 0 16px 0' }}>📋 Active Service Catalog</h4>
+            
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.88rem' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                    <th style={{ padding: '12px', color: '#475569' }}>Item (English)</th>
+                    <th style={{ padding: '12px', color: '#475569' }}>Item (Arabic)</th>
+                    <th style={{ padding: '12px', color: '#475569' }}>Available Services & Prices</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {db.items.map(item => {
+                    const prices = db.itemPrices.filter(p => p.itemId === item.id && p.price !== null);
+                    if (prices.length === 0) return null;
+                    return (
+                      <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '12px', fontWeight: '600' }}>{item.englishName}</td>
+                        <td style={{ padding: '12px', color: '#64748b' }}>{item.arabicName || '-'}</td>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                            {prices.map(p => {
+                              const variant = db.serviceVariants.find(v => v.id === p.serviceVariantId);
+                              const serviceType = db.serviceTypes.find(t => t.id === variant?.serviceTypeId);
+                              const tName = serviceType?.name || '';
+                              const vName = variant?.name || '';
+                              const displayName = tName === vName ? tName : `${tName} ${vName}`;
+                              return (
+                                <span key={p.id} style={{ background: '#f1f5f9', padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', border: '1px solid #cbd5e1' }}>
+                                  <strong>{displayName}</strong>: <span style={{ color: '#059669', fontWeight: '700' }}>QR {p.price}</span>
+                                </span>
+                              )
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1306,69 +1336,109 @@ export const AdminPortal: React.FC = () => {
       {activeModule === 'pos' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.1fr', gap: '24px' }}>
           
-          {/* POS Catalog browsing */}
+          {/* POS Catalog browsing (Using Matrix Pricing) */}
           <div style={{ background: 'white', borderRadius: '12px', padding: '20px', border: '1px solid #cbd5e1' }}>
-            <h4 style={{ margin: '0 0 16px 0' }}>🧺 Laundry Services Catalog</h4>
+            <h4 style={{ margin: '0 0 16px 0' }}>🧺 Service Catalog</h4>
             
             <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-              <input type="text" value={posSearch} onChange={e => setPosSearch(e.target.value)} placeholder="🔍 Search service catalog..." style={{ flex: 1, padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
-              <select value={posCategory} onChange={e => setPosCategory(e.target.value)} style={{ padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }}>
-                {['All', ...Array.from(new Set(db.services.map(s => s.category)))].map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
+              <input type="text" value={posSearch} onChange={e => setPosSearch(e.target.value)} placeholder="🔍 Search item (e.g. Shirt)..." style={{ flex: 1, padding: '8px', border: '1.5px solid #cbd5e1', borderRadius: '6px' }} />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', maxHeight: '350px', overflowY: 'auto' }}>
-              {db.services
-                .filter(s => s.active !== false)
-                .filter(s => s.name.toLowerCase().includes(posSearch.toLowerCase()))
-                .filter(s => posCategory === 'All' || s.category === posCategory)
-                .map(serv => (
-                  <div key={serv.id} style={{ padding: '12px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#f8fafc', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ fontWeight: '700', fontSize: '0.88rem', color: '#0f172a' }}>{serv.name}</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px' }}>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          Normal: <strong style={{ color: '#2563eb' }}>QR {serv.price.toFixed(2)}</strong>
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                          Express (+{serv.expressSurcharge || 0}%): <strong style={{ color: '#7c3aed' }}>QR {(serv.price * (1 + (serv.expressSurcharge || 0) / 100)).toFixed(2)}</strong>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', marginTop: '12px' }}>
-                      <button 
-                        onClick={() => {
-                          const existing = posCart.find(i => i.service.id === serv.id && i.express === false);
-                          if (existing) {
-                            setPosCart(posCart.map(i => i.service.id === serv.id && i.express === false ? { ...i, qty: i.qty + 1 } : i));
-                          } else {
-                            setPosCart([...posCart, { service: serv, qty: 1, express: false }]);
-                          }
-                        }}
-                        style={{ padding: '6px 4px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.72rem' }}
-                      >
-                        🛒 Normal
-                      </button>
-                      <button 
-                        onClick={() => {
-                          const existing = posCart.find(i => i.service.id === serv.id && i.express === true);
-                          if (existing) {
-                            setPosCart(posCart.map(i => i.service.id === serv.id && i.express === true ? { ...i, qty: i.qty + 1 } : i));
-                          } else {
-                            setPosCart([...posCart, { service: serv, qty: 1, express: true }]);
-                          }
-                        }}
-                        style={{ padding: '6px 4px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '0.72rem' }}
-                      >
-                        ⚡ Express
-                      </button>
-                    </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px', maxHeight: '350px', overflowY: 'auto' }}>
+              {db.items
+                .filter(s => s.status !== 'Inactive')
+                .filter(s => s.englishName.toLowerCase().includes(posSearch.toLowerCase()) || (s.arabicName && s.arabicName.includes(posSearch)))
+                .map(item => (
+                  <div 
+                    key={item.id} 
+                    onClick={() => setSelectedPosItem(item)}
+                    style={{ 
+                      padding: '16px 12px', 
+                      border: selectedPosItem?.id === item.id ? '2px solid #2563eb' : '1px solid #cbd5e1', 
+                      borderRadius: '8px', 
+                      background: selectedPosItem?.id === item.id ? '#eff6ff' : '#f8fafc', 
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      alignItems: 'center',
+                      gap: '8px' 
+                    }}
+                  >
+                    <div style={{ fontSize: '1.8rem' }}>👕</div>
+                    <div style={{ fontWeight: '700', fontSize: '0.85rem', color: '#0f172a' }}>{item.englishName}</div>
+                    {item.arabicName && <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{item.arabicName}</div>}
                   </div>
                 ))}
             </div>
+
+            {selectedPosItem && (
+              <div style={{ marginTop: '20px', padding: '16px', background: '#f1f5f9', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+                <h5 style={{ margin: '0 0 12px 0', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Select Service for: <strong style={{ color: '#2563eb' }}>{selectedPosItem.englishName}</strong></span>
+                  <button onClick={() => setSelectedPosItem(null)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}>✕</button>
+                </h5>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {db.serviceTypes.map(st => {
+                    const variantsForThisType = db.serviceVariants.filter(sv => sv.serviceTypeId === st.id);
+                    return (
+                      <div key={st.id} style={{ background: 'white', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ fontWeight: '700', fontSize: '0.85rem', marginBottom: '8px', color: '#334155' }}>{st.name}</div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {variantsForThisType.map(sv => {
+                            const priceRecord = db.itemPrices.find(ip => ip.itemId === selectedPosItem.id && ip.serviceVariantId === sv.id);
+                            const price = priceRecord?.price;
+                            if (price === null || price === undefined) return null;
+                            
+                            return (
+                              <button
+                                key={sv.id}
+                                onClick={() => {
+                                  const existing = posCart.find(i => i.itemId === selectedPosItem.id && i.variantId === sv.id);
+                                  if (existing) {
+                                    setPosCart(posCart.map(i => i.itemId === selectedPosItem.id && i.variantId === sv.id ? { ...i, qty: i.qty + 1 } : i));
+                                  } else {
+                                    setPosCart([...posCart, { 
+                                      itemId: selectedPosItem.id, 
+                                      itemName: selectedPosItem.englishName, 
+                                      serviceTypeId: st.id, 
+                                      serviceTypeName: st.name, 
+                                      variantId: sv.id, 
+                                      variantName: sv.name, 
+                                      price: price, 
+                                      qty: 1 
+                                    }]);
+                                  }
+                                  setSelectedPosItem(null); // auto-close after adding
+                                }}
+                                style={{
+                                  padding: '8px 12px',
+                                  background: sv.name.toLowerCase().includes('express') ? '#f3e8ff' : '#eff6ff',
+                                  color: sv.name.toLowerCase().includes('express') ? '#7c3aed' : '#2563eb',
+                                  border: '1px solid',
+                                  borderColor: sv.name.toLowerCase().includes('express') ? '#d8b4fe' : '#bfdbfe',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '700',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  alignItems: 'center',
+                                  gap: '2px'
+                                }}
+                              >
+                                <span>{sv.name}</span>
+                                <span style={{ fontSize: '0.85rem' }}>QR {price.toFixed(2)}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* POS Cart details & client info */}
@@ -1383,8 +1453,12 @@ export const AdminPortal: React.FC = () => {
                 posCart.map((item, i) => (
                   <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '8px' }}>
                     <div>
-                      <strong style={{ fontSize: '0.85rem' }}>{item.service.name}</strong>
-                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>Qty: {item.qty} {item.express && `• Express (+${item.service.expressSurcharge || 0}%)`} — <strong>QR {((item.service.price * (item.express ? (1 + (item.service.expressSurcharge || 0) / 100) : 1)) * item.qty).toFixed(2)}</strong></div>
+                      <strong style={{ fontSize: '0.85rem' }}>{item.itemName}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#64748b' }}>
+                        {item.serviceTypeName} ({item.variantName})
+                        <br/>
+                        Qty: {item.qty} — <strong>QR {(item.price * item.qty).toFixed(2)}</strong>
+                      </div>
                     </div>
                     <button onClick={() => setPosCart(posCart.filter((_, idx) => idx !== i))} style={{ border: 'none', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>✕</button>
                   </div>
@@ -2220,6 +2294,11 @@ export const AdminPortal: React.FC = () => {
               <div><strong>Placing Date:</strong> {viewingOrder.date}</div>
               <div><strong>payment status:</strong> {viewingOrder.paymentStatus}</div>
               <div><strong>laundry timeline status:</strong> {viewingOrder.status}</div>
+              {viewingOrder.pickupNotes && (
+                <div style={{ color: '#b45309', background: '#fef3c7', padding: '6px 10px', borderRadius: '6px', fontWeight: '600' }}>
+                  <strong>⚠️ Pickup Inspection Notes:</strong> {viewingOrder.pickupNotes}
+                </div>
+              )}
 
               {(() => {
                 const customerObj = db.customers.find(c => c.id === viewingOrder.customerId || c.name === viewingOrder.customerName);
@@ -2286,24 +2365,65 @@ export const AdminPortal: React.FC = () => {
 
       {/* VIEW CUSTOMER PROFILE DETAILS */}
       {viewingCustomer && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-          <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '440px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
-            <div style={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', padding: '20px 24px', color: 'white', position: 'relative' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>Customer Profile: {viewingCustomer.name}</h3>
-              <button onClick={() => setViewingCustomer(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div style={{ background: 'white', borderRadius: '20px', width: '100%', maxWidth: '460px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}>
+            
+            {/* Header Section */}
+            <div style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', padding: '32px 24px 24px', color: 'white', position: 'relative', textAlign: 'center' }}>
+              <button onClick={() => setViewingCustomer(null)} style={{ position: 'absolute', right: '16px', top: '16px', color: 'rgba(255,255,255,0.8)', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.2rem', transition: 'color 0.2s' }}>✕</button>
+              
+              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'white', color: '#0284c7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '2.2rem', fontWeight: '800', margin: '0 auto 16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                {viewingCustomer.name.charAt(0).toUpperCase()}
+              </div>
+              <h3 style={{ margin: '0 0 4px', fontSize: '1.4rem', fontWeight: '800' }}>{viewingCustomer.name}</h3>
+              <div style={{ fontSize: '0.9rem', color: '#e0f2fe' }}>{viewingCustomer.email}</div>
             </div>
 
-            <div style={{ padding: '24px', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div><strong>Name:</strong> {viewingCustomer.name}</div>
-              <div><strong>Email:</strong> {viewingCustomer.email}</div>
-              <div><strong>Phone:</strong> {viewingCustomer.phone}</div>
-              <div><strong>Address:</strong> {viewingCustomer.address}</div>
-              <div><strong>Wallet Balance:</strong> QR {viewingCustomer.walletBalance.toFixed(2)}</div>
-              <div><strong>Loyalty Points:</strong> {viewingCustomer.loyaltyPoints}</div>
-              <div><strong>Notes:</strong> {viewingCustomer.notes || 'None'}</div>
+            {/* Content Section */}
+            <div style={{ padding: '24px', background: '#f8fafc' }}>
+              
+              {/* Financial Stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Wallet Balance</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#16a34a' }}>QR {viewingCustomer.walletBalance.toFixed(2)}</div>
+                </div>
+                <div style={{ background: 'white', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: '700', color: '#64748b', textTransform: 'uppercase', marginBottom: '4px' }}>Loyalty Points</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: '800', color: '#f59e0b' }}>⭐ {viewingCustomer.loyaltyPoints}</div>
+                </div>
+              </div>
 
-              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '12px', marginTop: '6px', display: 'flex', justifyContent: 'flex-end' }}>
-                <button onClick={() => setViewingCustomer(null)} style={{ padding: '8px 20px', borderRadius: '8px', border: 'none', background: '#2563eb', color: 'white', fontWeight: '700', cursor: 'pointer' }}>Close Profile</button>
+              {/* Details List */}
+              <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>📱</span>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b' }}>Phone Number</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '500', color: '#1e293b' }}>{viewingCustomer.phone}</div>
+                  </div>
+                </div>
+                <div style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <span style={{ fontSize: '1.2rem', color: '#94a3b8' }}>📍</span>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b' }}>Address</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '500', color: '#1e293b' }}>{viewingCustomer.address}</div>
+                  </div>
+                </div>
+                <div style={{ padding: '16px', display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: '1.2rem', color: '#94a3b8', marginTop: '2px' }}>📝</span>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#64748b' }}>Notes</div>
+                    <div style={{ fontSize: '0.9rem', fontWeight: '500', color: '#475569', lineHeight: '1.4' }}>{viewingCustomer.notes || 'No specific notes for this customer.'}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action */}
+              <div style={{ marginTop: '24px' }}>
+                <button onClick={() => setViewingCustomer(null)} style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', background: 'white', color: '#475569', fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer', transition: 'background 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                  Close Profile
+                </button>
               </div>
             </div>
           </div>
@@ -2378,9 +2498,9 @@ export const AdminPortal: React.FC = () => {
       {qrCust && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15,23,42,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div style={{ background: 'white', borderRadius: '16px', width: '100%', maxWidth: '400px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.15)' }}>
-            <div style={{ background: qrCust.qrDisabled ? 'linear-gradient(135deg, #ef4444, #b91c1c)' : 'linear-gradient(135deg, #16a34a, #10b981)', padding: '20px 24px', color: 'white', position: 'relative' }}>
+            <div style={{ background: qrCust.qrStatus === 'Disabled' ? 'linear-gradient(135deg, #ef4444, #b91c1c)' : 'linear-gradient(135deg, #16a34a, #10b981)', padding: '20px 24px', color: 'white', position: 'relative' }}>
               <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '800' }}>
-                {qrCust.qrDisabled ? '🚨 QR Disabled (Lost)' : 'Secure Customer QR Link'}
+                {qrCust.qrStatus === 'Disabled' ? '🚨 QR Disabled (Lost)' : 'Secure Customer QR Link'}
               </h3>
               <button onClick={() => setQrCust(null)} style={{ position: 'absolute', right: '20px', top: '20px', color: 'white', border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '1.1rem' }}>✕</button>
             </div>
@@ -2388,20 +2508,25 @@ export const AdminPortal: React.FC = () => {
             <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
               <div style={{ width: '150px', height: '150px', background: '#f1f5f9', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '4.5rem', borderRadius: '12px', position: 'relative' }}>
                 📱
-                {qrCust.qrDisabled && (
+                {qrCust.qrStatus === 'Disabled' && (
                   <span style={{ position: 'absolute', top: '5px', right: '5px', background: '#ef4444', color: 'white', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>DISABLED</span>
                 )}
               </div>
               <div style={{ textAlign: 'center', fontSize: '0.9rem' }}>
                 <strong>{qrCust.name}</strong>
-                <p style={{ margin: '4px 0 0 0', color: '#64748b' }}>
-                  {qrCust.qrDisabled 
-                    ? 'This QR is currently disabled. Scan will show access error.' 
-                    : 'Scan this QR code to automatically log in to the Customer Portal.'}
-                </p>
+                <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '12px', borderRadius: '8px', marginTop: '12px', fontSize: '0.8rem', color: '#334155', textAlign: 'left' }}>
+                  <p style={{ margin: '0 0 6px 0' }}>💡 <strong>Important Note:</strong> This QR code is the customer's <strong>permanent access</strong> to their Customer Portal.</p>
+                  <p style={{ margin: '0 0 6px 0' }}>Customers <strong>do not</strong> need to install any app. They simply scan the QR or click the WhatsApp link to securely access their account via the browser.</p>
+                  <p style={{ margin: 0 }}>If the QR is lost or compromised, you can disable it and regenerate a new secure one below.</p>
+                </div>
+                {qrCust.qrStatus === 'Disabled' && (
+                  <p style={{ margin: '12px 0 0 0', color: '#ef4444', fontWeight: '700' }}>
+                    🚨 This QR is currently disabled. Scan will show an access error.
+                  </p>
+                )}
               </div>
 
-              {!qrCust.qrDisabled ? (
+              {qrCust.qrStatus !== 'Disabled' ? (
                 <>
                   <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
                     <button onClick={() => handleShareQR(qrCust)} style={{ flex: 1, padding: '10px', background: '#25d366', color: 'white', border: 'none', borderRadius: '8px', fontWeight: '700', cursor: 'pointer' }}>Share via WhatsApp</button>
@@ -2469,5 +2594,6 @@ export const AdminPortal: React.FC = () => {
       )}
 
     </PortalLayout>
+    </>
   );
 };

@@ -330,7 +330,8 @@ export const DeliveryPortal: React.FC = () => {
           ...o,
           status: nextStatus,
           deliveryStatus: deliveryStatusText,
-          weightItems: pickupWeightItems
+          weightItems: pickupWeightItems,
+          pickupNotes: pickupNotes
         };
       }
       return o;
@@ -425,22 +426,22 @@ export const DeliveryPortal: React.FC = () => {
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', fontFamily: '"Outfit", sans-serif' }}>
       
       {/* Top Navbar */}
-      <header style={{ background: 'linear-gradient(135deg, #0f172a, #1e293b)', color: 'white', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', zIndex: 10 }}>
+      <header style={{ background: '#ffffff', color: '#1e293b', padding: '14px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', boxShadow: '0 1px 3px 0 rgba(0,0,0,0.05)', zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 10px rgba(37, 99, 235, 0.2)' }}>
             <span style={{ fontSize: '1.4rem' }}>🚚</span>
           </div>
           <div>
-            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', letterSpacing: '0.75px', color: '#ffffff', textTransform: 'uppercase' }}>
+            <h1 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', letterSpacing: '0.75px', color: '#0369a1', textTransform: 'uppercase' }}>
               {db.companies.find(c => c.id === db.activeCompanyId)?.name || 'Laundra'} Go
             </h1>
-            <p style={{ margin: 0, fontSize: '0.7rem', color: '#94a3b8', fontWeight: '600' }}>Web-Based Delivery Operations Portal</p>
+            <p style={{ margin: 0, fontSize: '0.7rem', color: '#64748b', fontWeight: '700' }}>Web-Based Delivery Operations Portal</p>
           </div>
         </div>
         
         {currentUser && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '30px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '6px 12px', borderRadius: '30px', border: '1px solid #e2e8f0' }}>
               {currentUser.profilePhoto && !sidebarImgError ? (
                 <img 
                   src={currentUser.profilePhoto} 
@@ -464,9 +465,9 @@ export const DeliveryPortal: React.FC = () => {
                   {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'D'}
                 </div>
               )}
-              <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#f1f5f9', textTransform: 'capitalize' }}>{currentUser.name}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: '800', color: '#1e293b', textTransform: 'capitalize' }}>{currentUser.name}</span>
             </div>
-            <button onClick={handleLogout} style={{ border: '1px solid #f43f5e', background: 'transparent', color: '#f43f5e', padding: '8px 16px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button onClick={handleLogout} style={{ border: '1.5px solid #fca5a5', background: '#fef2f2', color: '#ef4444', padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s', display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span>🚪</span> Sign Out
             </button>
           </div>
@@ -680,38 +681,39 @@ export const DeliveryPortal: React.FC = () => {
         <div style={{ flex: 1, display: 'flex', background: '#f1f5f9' }}>
           
           {/* Left Sidebar Navigation Panel */}
-          <aside style={{ width: '260px', background: '#0f172a', color: '#94a3b8', display: 'flex', flexDirection: 'column', borderRight: '1px solid #1e293b' }}>
-            <div style={{ padding: '24px 20px', borderBottom: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <aside style={{ width: '260px', background: '#ffffff', color: '#475569', display: 'flex', flexDirection: 'column', borderRight: '1px solid #e2e8f0', boxShadow: '2px 0 8px rgba(0,0,0,0.02)', position: 'sticky', top: 0, height: '100vh', overflowY: 'auto' }}>
+            <div style={{ padding: '24px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {currentUser.profilePhoto && !sidebarImgError ? (
                 <img 
                   src={currentUser.profilePhoto} 
                   alt="profile" 
                   onError={() => setSidebarImgError(true)} 
-                  style={{ width: '42px', height: '42px', borderRadius: '50%', objectFit: 'cover' }} 
+                  style={{ width: '46px', height: '46px', borderRadius: '50%', objectFit: 'cover', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} 
                 />
               ) : (
                 <div style={{ 
-                  width: '42px', 
-                  height: '42px', 
+                  width: '46px', 
+                  height: '46px', 
                   borderRadius: '50%', 
                   background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', 
                   color: 'white', 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
-                  fontWeight: 'bold',
-                  fontSize: '1rem'
+                  fontWeight: '800',
+                  fontSize: '1.2rem',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                 }}>
                   {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'D'}
                 </div>
               )}
               <div>
-                <div style={{ color: 'white', fontWeight: 'bold', fontSize: '0.9rem' }}>{currentUser.name}</div>
-                <span style={{ fontSize: '0.72rem', background: '#16a34a', color: 'white', padding: '1px 6px', borderRadius: '10px', fontWeight: 'bold' }}>Active Duty</span>
+                <div style={{ color: '#1e293b', fontWeight: '800', fontSize: '1rem', textTransform: 'capitalize' }}>{currentUser.name}</div>
+                <span style={{ fontSize: '0.72rem', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '12px', fontWeight: '800', marginTop: '2px', display: 'inline-block' }}>Active Duty</span>
               </div>
             </div>
 
-            <nav style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+            <nav style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
               {[
                 { id: 'dashboard', label: '📊 Dashboard', icon: '📊' },
                 { id: 'tasks', label: '📋 Assigned Tasks', icon: '📋' },
@@ -731,13 +733,25 @@ export const DeliveryPortal: React.FC = () => {
                     padding: '12px 16px',
                     borderRadius: '8px',
                     border: 'none',
-                    background: activeTab === tab.id ? '#2563eb' : 'transparent',
-                    color: activeTab === tab.id ? 'white' : '#94a3b8',
+                    background: activeTab === tab.id ? '#eff6ff' : 'transparent',
+                    color: activeTab === tab.id ? '#2563eb' : '#475569',
                     textAlign: 'left',
-                    fontWeight: 'bold',
+                    fontWeight: '700',
                     fontSize: '0.9rem',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (activeTab !== tab.id) {
+                      e.currentTarget.style.background = '#f8fafc';
+                      e.currentTarget.style.color = '#1e293b';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (activeTab !== tab.id) {
+                      e.currentTarget.style.background = 'transparent';
+                      e.currentTarget.style.color = '#475569';
+                    }
                   }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -919,8 +933,8 @@ export const DeliveryPortal: React.FC = () => {
                             </div>
                             <div style={{ fontSize: '0.85rem', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '12px' }}>
                               <div>👤 <strong>Client Name:</strong> {o.customerName}</div>
-                              <div>📞 <strong>Client Phone:</strong> {o.phone || 'N/A'}</div>
-                              <div>📍 <strong>Address:</strong> {o.address || 'Pickup at Branch'}</div>
+                              <div>📞 <strong>Client Phone:</strong> {o.phone || db.customers.find(c => c.id === o.customerId)?.phone || 'N/A'}</div>
+                              <div>📍 <strong>Address:</strong> {o.address || db.customers.find(c => c.id === o.customerId)?.address || 'Pickup at Branch'}</div>
                               <div>🧺 <strong>Services:</strong> {o.services?.map(s => `${s.name} x${s.qty}`).join(', ') || o.weightItems || 'Standard Laundry Load'}</div>
                               <div>📅 <strong>Pickup Time:</strong> {o.date} (10:00 AM - 1:00 PM)</div>
                               <div>📝 <strong>Instructions:</strong> Handle with care, separate whites.</div>
@@ -929,8 +943,8 @@ export const DeliveryPortal: React.FC = () => {
 
                           <div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                              <button onClick={() => window.open(`tel:${o.phone || '555-0199'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>📞 Contact Client</button>
-                              <button onClick={() => alert(`Launching navigation to: ${o.address}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>🗺️ Navigate</button>
+                              <button onClick={() => window.open(`tel:${o.phone || db.customers.find(c => c.id === o.customerId)?.phone || '555-0199'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>📞 Contact Client</button>
+                              <button onClick={() => alert(`Launching navigation to: ${o.address || db.customers.find(c => c.id === o.customerId)?.address || 'Pickup at Branch'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 'bold' }}>🗺️ Navigate</button>
                             </div>
                             
                             {(o.deliveryStatus === 'Pending Pickup' || (o.status as string) === 'Pickup Assigned') && (
@@ -959,8 +973,8 @@ export const DeliveryPortal: React.FC = () => {
                             </div>
                             <div style={{ fontSize: '0.85rem', color: '#334155', display: 'flex', flexDirection: 'column', gap: '6px', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px', marginBottom: '12px' }}>
                               <div>👤 <strong>Client Name:</strong> {o.customerName}</div>
-                              <div>📞 <strong>Client Phone:</strong> {o.phone || 'N/A'}</div>
-                              <div>📍 <strong>Address:</strong> {o.address || 'Delivery Address'}</div>
+                              <div>📞 <strong>Client Phone:</strong> {o.phone || db.customers.find(c => c.id === o.customerId)?.phone || 'N/A'}</div>
+                              <div>📍 <strong>Address:</strong> {o.address || db.customers.find(c => c.id === o.customerId)?.address || 'Delivery Address'}</div>
                               <div>🧺 <strong>Services:</strong> {o.services?.map(s => `${s.name} x${s.qty}`).join(', ') || o.weightItems || 'Standard Laundry Load'}</div>
                               <div>📅 <strong>Delivery Time:</strong> {o.date} (3:00 PM - 6:00 PM)</div>
                               <div>💳 <strong>Method:</strong> {o.paymentMethod} ({o.paymentStatus || 'Unpaid'})</div>
@@ -970,8 +984,8 @@ export const DeliveryPortal: React.FC = () => {
 
                           <div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '12px' }}>
-                              <button onClick={() => window.open(`tel:${o.phone || '555-0199'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>📞 Contact Client</button>
-                              <button onClick={() => alert(`Launching navigation to: ${o.address}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>🗺️ Navigate</button>
+                              <button onClick={() => window.open(`tel:${o.phone || db.customers.find(c => c.id === o.customerId)?.phone || '555-0199'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>📞 Contact Client</button>
+                              <button onClick={() => alert(`Launching navigation to: ${o.address || db.customers.find(c => c.id === o.customerId)?.address || 'Delivery Address'}`)} style={{ padding: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', background: 'transparent', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>🗺️ Navigate</button>
                             </div>
                             {o.status === 'Ready' && (
                               <button onClick={() => updatePickupStatus(o, 'Out for Delivery', 'Out for Delivery')} style={{ width: '100%', padding: '10px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}>🚚 Mark Out For Delivery</button>

@@ -211,10 +211,10 @@ export const PortalLayout: React.FC<PortalLayoutProps> = ({ children, activeModu
         </div>
       </div>
 
-      <div className="admin-layout-container" style={{ display: 'flex', gap: '24px', alignItems: 'stretch' }}>
+      <div className="admin-layout-container" style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
         
         {/* Sidebar Panel */}
-        <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRadius: '16px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0 }}>
+        <aside className="admin-sidebar" style={{ width: '260px', background: 'white', borderRadius: '16px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', padding: '20px 0', flexShrink: 0, position: 'sticky', top: '24px', height: 'calc(100vh - 48px)' }}>
           <div className="sidebar-brand" style={{ padding: '0 20px 16px', borderBottom: '1px solid #f1f5f9', marginBottom: '16px' }}>
             <span style={{ fontSize: '1.1rem', fontWeight: '800', color: '#1e3a8a', display: 'block' }}>{brandName}</span>
             <span style={{ fontSize: '0.82rem', fontWeight: '700', color: '#475569', display: 'block', marginTop: '4px' }}>🏢 {activeComp?.name || 'Laundra Corp'}</span>
